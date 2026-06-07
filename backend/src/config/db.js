@@ -1,12 +1,29 @@
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 
+function getDbConfig() {
+  if (process.env.DATABASE_URL) {
+    const url = new URL(process.env.DATABASE_URL);
+    return {
+      host: url.hostname,
+      port: parseInt(url.port, 10) || 3306,
+      user: url.username,
+      password: url.password,
+      database: url.pathname.replace(/^\//, ''),
+    };
+  }
+
+  return {
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 3306,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  };
+}
+
 const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
+  ...getDbConfig(),
   waitForConnections: true,
   connectionLimit: 10,
   namedPlaceholders: true,

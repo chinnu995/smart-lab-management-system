@@ -11,7 +11,6 @@ export default function Analytics() {
   const [eq, setEq] = useState([]);
   const [comp, setComp] = useState([]);
   const [heat, setHeat] = useState([]);
-  const [fac, setFac] = useState([]);
 
   useEffect(() => {
     api.get('/analytics/attendance').then(r => setTrend(r.data));
@@ -19,7 +18,6 @@ export default function Analytics() {
     api.get('/analytics/equipment').then(r => setEq(r.data));
     api.get('/analytics/complaints').then(r => setComp(r.data));
     api.get('/analytics/heatmap').then(r => setHeat(r.data));
-    api.get('/analytics/faculty-perf').then(r => setFac(r.data));
   }, []);
 
   // Build heatmap grid: rows=labs, cols=hours 8..18
@@ -117,20 +115,6 @@ export default function Analytics() {
             </table>
           </div>
         ) : <div className="text-slate-500">No approved bookings yet.</div>}
-      </div>
-
-      <div className="card">
-        <h3 className="font-semibold mb-3">Faculty Performance</h3>
-        <table className="w-full text-sm">
-          <thead><tr className="text-left text-slate-500"><th>Name</th><th>Classes Marked</th><th>Complaints Resolved</th></tr></thead>
-          <tbody>{fac.map((f,i)=>(
-            <tr key={i} className="border-t border-slate-200 dark:border-slate-700">
-              <td className="py-2">{f.full_name}</td>
-              <td>{f.classes_marked}</td>
-              <td>{f.complaints_resolved}</td>
-            </tr>
-          ))}</tbody>
-        </table>
       </div>
     </div>
   );

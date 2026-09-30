@@ -166,6 +166,35 @@ async function verifyConnectionWithRetry({ maxAttempts = 5, initialDelayMs = 200
         );
         ALTER TABLE faculty ADD COLUMN IF NOT EXISTS subject VARCHAR(100);
         ALTER TABLE faculty ADD COLUMN IF NOT EXISTS scheme VARCHAR(50);
+        ALTER TABLE students ADD COLUMN IF NOT EXISTS section VARCHAR(50);
+
+        CREATE TABLE IF NOT EXISTS lab_sessions (
+          session_id SERIAL PRIMARY KEY,
+          subject VARCHAR(120) NOT NULL,
+          faculty_id INT NOT NULL REFERENCES faculty(faculty_id) ON DELETE CASCADE,
+          lab_id INT NOT NULL REFERENCES labs(lab_id) ON DELETE CASCADE,
+          class_name VARCHAR(50) NOT NULL,
+          session_date DATE NOT NULL,
+          start_time TIME NOT NULL,
+          end_time TIME NOT NULL,
+          qr_token VARCHAR(255) NOT NULL UNIQUE,
+          qr_expires_at TIMESTAMPTZ NOT NULL,
+          status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'closed', 'cancelled')),
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
+
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS session_id INT REFERENCES lab_sessions(session_id) ON DELETE SET NULL;
+        ALTER TABLE attendance ADD COLUMN IF NOT EXISTS subject VARCHAR(120);
+
+        DO $$ 
+        BEGIN 
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'uniq_student_session'
+          ) THEN 
+            ALTER TABLE attendance ADD CONSTRAINT uniq_student_session UNIQUE (student_id, session_id);
+          END IF;
+        END $$;
+
         CREATE TABLE IF NOT EXISTS faculty_feedback (
           feedback_id SERIAL PRIMARY KEY,
           faculty_id INT NOT NULL,
@@ -175,10 +204,20 @@ async function verifyConnectionWithRetry({ maxAttempts = 5, initialDelayMs = 200
           created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
         INSERT INTO labs (lab_name, lab_code, location, capacity, status, in_charge)
-        SELECT 'DSA', 'CL08', 'Block B - 110', 40, 'available', 1
+        SELECT 'DSA', 'CL08', '1F 10', 40, 'available', 1
         WHERE NOT EXISTS (
           SELECT 1 FROM labs WHERE UPPER(lab_name) LIKE '%DSA%' OR UPPER(lab_name) LIKE '%DATA STRUCTURE%'
         );
+
+        UPDATE labs SET location = '2F 01' WHERE UPPER(lab_name) LIKE '%ADA%';
+        UPDATE labs SET location = '2F 02' WHERE UPPER(lab_name) LIKE '%DBMS%';
+        UPDATE labs SET location = '2F 03' WHERE UPPER(lab_name) LIKE '%LATEX%';
+        UPDATE labs SET location = '1F 05' WHERE UPPER(lab_name) LIKE '%MICRO%';
+        UPDATE labs SET location = '1F 06' WHERE UPPER(lab_name) LIKE '%MONGO%';
+        UPDATE labs SET location = '3F 28' WHERE UPPER(lab_name) LIKE '%AI%' OR UPPER(lab_name) LIKE '%PYTHON%';
+        UPDATE labs SET location = 'NBGF 12' WHERE UPPER(lab_name) LIKE '%JAVA%';
+        UPDATE labs SET location = '1F 09' WHERE UPPER(lab_name) LIKE '%C %' OR UPPER(lab_name) = 'C' OR UPPER(lab_name) = 'C LANGUAGE';
+        UPDATE labs SET location = '1F 10' WHERE UPPER(lab_name) LIKE '%DSA%' OR UPPER(lab_name) LIKE '%DATA STRUCTURE%';
       `);
       client.release();
       return;

@@ -1,72 +1,608 @@
 const db = require('../config/db');
 const audit = require('../utils/audit');
 const QRCode = require('qrcode');
+const crypto = require('crypto');
+const os = require('os');
 const { sendMail } = require('../utils/mailer');
 const { sendSMS } = require('../utils/sms');
 
 const activeQRSessions = {};
 
-// Faculty marks attendance (manual / qr / camera)
-exports.mark = async (req, res) => {
-  const { student_id, lab_id, status, method, attend_date } = req.body;
+async function autoCloseExpiredSessions(io) {
   try {
-    await db.execute(
-      `INSERT INTO attendance (student_id, lab_id, faculty_id, attend_date, status, method)
-       VALUES (?,?,?,?,?,?)
-       ON CONFLICT (student_id, lab_id, attend_date) 
-       DO UPDATE SET status=EXCLUDED.status, method=EXCLUDED.method, marked_at=CURRENT_TIMESTAMP`,
-      [student_id, lab_id, req.user.faculty_id || null, attend_date || new Date(), status || 'present', method || 'manual']
+    const [expired] = await db.execute(
+      "SELECT session_id, lab_id FROM lab_sessions WHERE status = 'active' AND qr_expires_at <= CURRENT_TIMESTAMP"
     );
-    const [st] = await db.execute('SELECT user_id FROM students WHERE student_id=?', [student_id]);
-    if (st.length) {
-      const student_user_id = st[0].user_id;
+    if (expired.length > 0) {
       await db.execute(
-        `INSERT INTO notifications (user_id, type, title, message)
-         VALUES (?, 'attendance', 'Attendance Marked', ?)`,
-        [student_user_id, `You were marked ${status} in the lab.`]
+        "UPDATE lab_sessions SET status = 'closed' WHERE status = 'active' AND qr_expires_at <= CURRENT_TIMESTAMP"
       );
-      const io = req.app.get('io');
-      io.to(`user:${student_user_id}`).emit('notification', {
-        type: 'attendance', title: 'Attendance Marked', message: `You were marked ${status}.`
-      });
-    }
-    const io = req.app.get('io');
-    io.to('role:hod').to('role:faculty').emit('attendance:changed');
-
-    // Parent alert if < 85%
-    const [pct] = await db.execute(
-      `SELECT ROUND(SUM(CASE WHEN status='present' THEN 1 ELSE 0 END)*100.0/NULLIF(COUNT(*),0),2) AS p FROM attendance WHERE student_id=?`,
-      [student_id]
-    );
-    if (pct[0]?.p !== null && pct[0]?.p < 85) {
-      const [parents] = await db.execute(
-        `SELECT parent_name, email, phone, u.full_name AS sname
-           FROM parent_details p JOIN students s ON s.student_id=p.student_id
-           JOIN users u ON u.user_id=s.user_id WHERE p.student_id=?`, [student_id]
-      );
-      for (const p of parents) {
-        if (p.email) sendMail({ to: p.email, subject: 'Attendance Alert',
-          html: `<p>Dear ${p.parent_name},</p><p>Your ward <b>${p.sname}</b> currently has attendance of <b>${pct[0].p}%</b> which is below the required 85%.</p>` });
-        if (p.phone) sendSMS(p.phone, `Smart Lab Alert: ${p.sname}'s attendance is ${pct[0].p}% (<85%).`);
+      for (const exp of expired) {
+        await db.execute("UPDATE labs SET status = 'available' WHERE lab_id = ?", [exp.lab_id]);
+        delete activeQRSessions[exp.lab_id];
+        if (io) {
+          io.to('role:hod').to('role:faculty').to('role:student').emit('session:closed', { session_id: Number(exp.session_id), lab_id: exp.lab_id });
+          io.to('role:hod').to('role:faculty').emit('lab:status_changed', { lab_id: exp.lab_id, status: 'available' });
+        }
       }
     }
-    res.json({ message: 'Marked', percentage: pct[0]?.p });
+  } catch (err) {
+    console.error('Error auto closing expired sessions:', err);
+  }
+}
+exports.autoCloseExpiredSessions = autoCloseExpiredSessions;
+
+function getLocalIP(req) {
+  let localIP = 'localhost';
+  if (req && req.headers && req.headers.host && !req.headers.host.includes('localhost') && !req.headers.host.includes('127.0.0.1')) {
+    localIP = req.headers.host.split(':')[0];
+  } else {
+    const interfaces = os.networkInterfaces();
+    for (const devName in interfaces) {
+      const low = devName.toLowerCase();
+      if (low.includes('virtual') || low.includes('vbox') || low.includes('vmnet') || low.includes('wsl') || low.includes('hyper-v')) {
+        continue;
+      }
+      const iface = interfaces[devName];
+      for (let i = 0; i < iface.length; i++) {
+        const alias = iface[i];
+        if (alias.family === 'IPv4' && alias.address !== '127.0.0.1' && !alias.internal) {
+          localIP = alias.address;
+          break;
+        }
+      }
+      if (localIP !== 'localhost') break;
+    }
+  }
+  return localIP;
+}
+
+// -----------------------------------------------------------------------------
+// 1. Create a Lab Session (Faculty/HOD)
+// -----------------------------------------------------------------------------
+exports.createSession = async (req, res) => {
+  try {
+    const { subject, lab_id, class_name, session_date, start_time, end_time, expiry_minutes } = req.body;
+
+    if (!subject || !lab_id || !class_name) {
+      return res.status(400).json({ message: 'subject, lab_id, and class_name are required' });
+    }
+
+    const [fac] = await db.execute('SELECT faculty_id FROM faculty WHERE user_id = ?', [req.user.id]);
+    const facultyId = fac.length ? fac[0].faculty_id : (req.user.faculty_id || 1);
+
+    const qrToken = crypto.randomBytes(32).toString('hex');
+    const expiryMins = Number(expiry_minutes) || 15;
+    const expiresAt = new Date(Date.now() + expiryMins * 60 * 1000);
+
+    const sDate = session_date || new Date().toISOString().slice(0, 10);
+    const sTime = start_time || '10:00:00';
+    const eTime = end_time || '12:00:00';
+
+    const [insertRes] = await db.execute(
+      `INSERT INTO lab_sessions (subject, faculty_id, lab_id, class_name, session_date, start_time, end_time, qr_token, qr_expires_at, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+      [subject, facultyId, Number(lab_id), class_name.trim(), sDate, sTime, eTime, qrToken, expiresAt]
+    );
+
+    const sessionId = insertRes.insertId;
+
+    await db.execute("UPDATE labs SET status = 'occupied' WHERE lab_id = ?", [lab_id]);
+
+    const [labRows] = await db.execute('SELECT lab_name, location FROM labs WHERE lab_id = ?', [lab_id]);
+    const labName = labRows[0]?.lab_name || `Lab #${lab_id}`;
+    const location = labRows[0]?.location || '2F 01';
+
+    const localIP = getLocalIP(req);
+    const qrUrl = `http://${localIP}:5173/student/attendance?qr_token=${qrToken}&session_id=${sessionId}`;
+    const dataUrl = await QRCode.toDataURL(qrUrl);
+
+    const sessionObj = {
+      session_id: sessionId,
+      subject,
+      faculty_id: facultyId,
+      lab_id: Number(lab_id),
+      lab_name: labName,
+      location,
+      class_name,
+      session_date: sDate,
+      start_time: sTime,
+      end_time: eTime,
+      qr_token: qrToken,
+      qr_expires_at: expiresAt,
+      dataUrl,
+      qrUrl,
+      status: 'active'
+    };
+
+    activeQRSessions[lab_id] = sessionObj;
+
+    const io = req.app?.get('io');
+    if (io) {
+      io.to('role:hod').to('role:faculty').to('role:student').emit('session:created', sessionObj);
+      io.to('role:student').emit('qr:active_session', sessionObj);
+      io.to('role:hod').to('role:faculty').emit('lab:status_changed', { lab_id, status: 'occupied' });
+    }
+
+    // Send notifications to eligible students in this class/section
+    try {
+      const [eligibleStudents] = await db.execute(
+        `SELECT user_id FROM students 
+         WHERE UPPER(TRIM(section)) = UPPER(TRIM(?)) OR UPPER(TRIM(department)) = UPPER(TRIM(?))`,
+        [class_name, class_name]
+      );
+      for (const s of eligibleStudents) {
+        await db.execute(
+          `INSERT INTO notifications (user_id, type, title, message)
+           VALUES (?, 'attendance', ?, ?)`,
+          [
+            s.user_id,
+            `Live Session Started: ${subject}`,
+            `Faculty started ${subject} for ${class_name} in ${labName}. Click to scan QR attendance!`
+          ]
+        );
+      }
+    } catch (notifErr) {
+      console.error('Notification error on session creation:', notifErr);
+    }
+
+    res.json(sessionObj);
+  } catch (err) {
+    console.error('Error creating lab session:', err);
+    res.status(500).json({ message: 'Failed to create lab session: ' + err.message });
+  }
+};
+
+// -----------------------------------------------------------------------------
+// 2. Regenerate QR Code for Active Session (Faculty/HOD)
+// -----------------------------------------------------------------------------
+exports.regenerateSessionQR = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { expiry_minutes } = req.body;
+
+    const newQrToken = crypto.randomBytes(32).toString('hex');
+    const expiryMins = Number(expiry_minutes) || 15;
+    const newExpiresAt = new Date(Date.now() + expiryMins * 60 * 1000);
+
+    const [rows] = await db.execute('SELECT * FROM lab_sessions WHERE session_id = ?', [sessionId]);
+    if (!rows.length) return res.status(404).json({ message: 'Session not found' });
+
+    await db.execute(
+      "UPDATE lab_sessions SET qr_token = ?, qr_expires_at = ?, status = 'active' WHERE session_id = ?",
+      [newQrToken, newExpiresAt, sessionId]
+    );
+
+    const session = rows[0];
+    const [labRows] = await db.execute('SELECT lab_name, location FROM labs WHERE lab_id = ?', [session.lab_id]);
+    const labName = labRows[0]?.lab_name || `Lab #${session.lab_id}`;
+
+    const localIP = getLocalIP(req);
+    const qrUrl = `http://${localIP}:5173/student/attendance?qr_token=${newQrToken}&session_id=${sessionId}`;
+    const dataUrl = await QRCode.toDataURL(qrUrl);
+
+    const updated = {
+      ...session,
+      lab_name: labName,
+      qr_token: newQrToken,
+      qr_expires_at: newExpiresAt,
+      dataUrl,
+      qrUrl,
+      status: 'active'
+    };
+
+    activeQRSessions[session.lab_id] = updated;
+
+    const io = req.app?.get('io');
+    if (io) {
+      io.to('role:student').to('role:faculty').to('role:hod').emit('qr:active_session', updated);
+    }
+
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to regenerate QR: ' + err.message });
+  }
+};
+
+// -----------------------------------------------------------------------------
+// 3. Close Session (Faculty/HOD)
+// -----------------------------------------------------------------------------
+exports.closeSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const [rows] = await db.execute('SELECT lab_id FROM lab_sessions WHERE session_id = ?', [sessionId]);
+    if (!rows.length) return res.status(404).json({ message: 'Session not found' });
+
+    const labId = rows[0].lab_id;
+    await db.execute("UPDATE lab_sessions SET status = 'closed' WHERE session_id = ?", [sessionId]);
+    await db.execute("UPDATE labs SET status = 'available' WHERE lab_id = ?", [labId]);
+
+    delete activeQRSessions[labId];
+
+    const io = req.app?.get('io');
+    if (io) {
+      io.to('role:hod').to('role:faculty').to('role:student').emit('session:closed', { session_id: Number(sessionId), lab_id: labId });
+      io.to('role:hod').to('role:faculty').emit('lab:status_changed', { lab_id: labId, status: 'available' });
+    }
+
+    res.json({ message: 'Session closed successfully' });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to close session: ' + err.message });
+  }
+};
+
+// -----------------------------------------------------------------------------
+// 4. Get Student Active Sessions (Student Dashboard - Filtered strictly for student class)
+// -----------------------------------------------------------------------------
+exports.getStudentActiveSessions = async (req, res) => {
+  try {
+    await autoCloseExpiredSessions(req.app?.get('io'));
+
+    const [st] = await db.execute('SELECT student_id, section, department FROM students WHERE user_id = ?', [req.user.id]);
+    if (!st.length) return res.json([]);
+
+    const studentSection = (st[0].section || '').trim().toUpperCase();
+    const studentDept = (st[0].department || '').trim().toUpperCase();
+    const studentId = st[0].student_id;
+
+    const [sessions] = await db.execute(
+      `SELECT ls.*, l.lab_name, l.location, u.full_name AS faculty_name
+       FROM lab_sessions ls
+       JOIN labs l ON l.lab_id = ls.lab_id
+       JOIN faculty f ON f.faculty_id = ls.faculty_id
+       JOIN users u ON u.user_id = f.user_id
+       WHERE ls.status = 'active' AND (ls.qr_expires_at IS NULL OR ls.qr_expires_at > CURRENT_TIMESTAMP)
+       ORDER BY ls.created_at DESC`
+    );
+
+    const eligibleSessions = [];
+    for (const s of sessions) {
+      const className = (s.class_name || '').trim().toUpperCase();
+
+      const isEligible =
+        !className ||
+        className === studentSection ||
+        className === studentDept ||
+        (studentSection && className.includes(studentSection)) ||
+        (studentSection && studentSection.includes(className));
+
+      if (isEligible) {
+        const [att] = await db.execute(
+          'SELECT attendance_id, status, marked_at FROM attendance WHERE student_id = ? AND session_id = ?',
+          [studentId, s.session_id]
+        );
+
+        const localIP = getLocalIP(req);
+        const qrUrl = `http://${localIP}:5173/student/attendance?qr_token=${s.qr_token}&session_id=${s.session_id}`;
+        const dataUrl = await QRCode.toDataURL(qrUrl);
+
+        eligibleSessions.push({
+          ...s,
+          dataUrl,
+          qrUrl,
+          alreadyMarked: att.length > 0 && att[0].status === 'present',
+          marked_at: att[0]?.marked_at || null
+        });
+      }
+    }
+
+    res.json(eligibleSessions);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// -----------------------------------------------------------------------------
+// 5. Get Faculty Active Sessions (Faculty Dashboard)
+// -----------------------------------------------------------------------------
+exports.getFacultyActiveSessions = async (req, res) => {
+  try {
+    await autoCloseExpiredSessions(req.app?.get('io'));
+
+    const [fac] = await db.execute('SELECT faculty_id FROM faculty WHERE user_id = ?', [req.user.id]);
+    const facultyId = fac.length ? fac[0].faculty_id : null;
+
+    let queryStr = `
+      SELECT ls.*, l.lab_name, l.location
+      FROM lab_sessions ls
+      JOIN labs l ON l.lab_id = ls.lab_id
+      WHERE ls.status = 'active' AND (ls.qr_expires_at IS NULL OR ls.qr_expires_at > CURRENT_TIMESTAMP)
+    `;
+    const params = [];
+    if (facultyId) {
+      queryStr += ' AND ls.faculty_id = ?';
+      params.push(facultyId);
+    }
+    queryStr += ' ORDER BY ls.created_at DESC';
+
+    const [sessions] = await db.execute(queryStr, params);
+
+    const result = [];
+    for (const s of sessions) {
+      const [eligible] = await db.execute(
+        'SELECT COUNT(*) AS total FROM students WHERE UPPER(TRIM(section)) = UPPER(TRIM(?)) OR UPPER(TRIM(department)) = UPPER(TRIM(?))',
+        [s.class_name, s.class_name]
+      );
+      const [present] = await db.execute(
+        "SELECT COUNT(*) AS p_count FROM attendance WHERE session_id = ? AND status = 'present'",
+        [s.session_id]
+      );
+
+      const localIP = getLocalIP(req);
+      const qrUrl = `http://${localIP}:5173/student/attendance?qr_token=${s.qr_token}&session_id=${s.session_id}`;
+      const dataUrl = await QRCode.toDataURL(qrUrl);
+
+      result.push({
+        ...s,
+        dataUrl,
+        qrUrl,
+        totalStudents: Number(eligible[0]?.total || 35),
+        presentStudents: Number(present[0]?.p_count || 0)
+      });
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// -----------------------------------------------------------------------------
+// 6. Get HOD Active Sessions (HOD Dashboard)
+// -----------------------------------------------------------------------------
+exports.getHodActiveSessions = async (req, res) => {
+  try {
+    await autoCloseExpiredSessions(req.app?.get('io'));
+
+    const [sessions] = await db.execute(
+      `SELECT ls.*, l.lab_name, l.location, u.full_name AS faculty_name
+       FROM lab_sessions ls
+       JOIN labs l ON l.lab_id = ls.lab_id
+       JOIN faculty f ON f.faculty_id = ls.faculty_id
+       JOIN users u ON u.user_id = f.user_id
+       WHERE ls.status = 'active' AND (ls.qr_expires_at IS NULL OR ls.qr_expires_at > CURRENT_TIMESTAMP)
+       ORDER BY l.lab_name ASC`
+    );
+
+    const result = [];
+    for (const s of sessions) {
+      const [eligible] = await db.execute(
+        'SELECT COUNT(*) AS total FROM students WHERE UPPER(TRIM(section)) = UPPER(TRIM(?)) OR UPPER(TRIM(department)) = UPPER(TRIM(?))',
+        [s.class_name, s.class_name]
+      );
+      const [present] = await db.execute(
+        "SELECT COUNT(*) AS p_count FROM attendance WHERE session_id = ? AND status = 'present'",
+        [s.session_id]
+      );
+
+      const totalCount = Number(eligible[0]?.total || 35);
+      const presentCount = Number(present[0]?.p_count || 0);
+
+      result.push({
+        session_id: s.session_id,
+        lab_id: s.lab_id,
+        lab_name: s.lab_name,
+        subject: s.subject,
+        faculty_name: s.faculty_name,
+        class_name: s.class_name,
+        present_count: presentCount,
+        total_students: totalCount,
+        pct: totalCount > 0 ? Math.round((presentCount * 100) / totalCount) : 0,
+        status: s.status,
+        qr_expires_at: s.qr_expires_at
+      });
+    }
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// -----------------------------------------------------------------------------
+// 7. Student Scans QR Code — Strict 10-Step Backend Validation Sequence
+// -----------------------------------------------------------------------------
+exports.markByQR = async (req, res) => {
+  const { token, qrToken, sessionId } = req.body;
+  let rawToken = (qrToken || token || '').trim();
+
+  if (!rawToken && !sessionId) {
+    return res.status(400).json({ message: 'QR token or session ID is required' });
+  }
+
+  try {
+    // -------------------------------------------------------------------------
+    // STEP 1: Is the student authenticated?
+    // -------------------------------------------------------------------------
+    const [s] = await db.execute('SELECT student_id, usn, section, department FROM students WHERE user_id = ?', [req.user.id]);
+    if (!s.length) return res.status(404).json({ message: 'Student record missing' });
+    const student = s[0];
+    const studentId = student.student_id;
+
+    // Decode URL or base64 token if passed full link
+    try { rawToken = decodeURIComponent(rawToken); } catch (e) {}
+    if (rawToken.includes('qr_token=')) {
+      const match = rawToken.match(/qr_token=([^&]+)/);
+      if (match) rawToken = match[1];
+    }
+    try { rawToken = decodeURIComponent(rawToken); } catch (e) {}
+
+    // -------------------------------------------------------------------------
+    // STEP 2 & STEP 4: Query session & verify existence
+    // -------------------------------------------------------------------------
+    let sessionRows = [];
+    if (rawToken) {
+      [sessionRows] = await db.execute('SELECT * FROM lab_sessions WHERE qr_token = ?', [rawToken]);
+    }
+    if (!sessionRows.length && sessionId) {
+      [sessionRows] = await db.execute('SELECT * FROM lab_sessions WHERE session_id = ?', [sessionId]);
+    }
+
+    if (!sessionRows.length) {
+      return res.status(400).json({ message: 'Invalid QR Code. Laboratory session not found.' });
+    }
+
+    const session = sessionRows[0];
+
+    // -------------------------------------------------------------------------
+    // STEP 3: Has the QR expired?
+    // -------------------------------------------------------------------------
+    const now = new Date();
+    const expiresAt = new Date(session.qr_expires_at);
+    if (now > expiresAt) {
+      return res.status(400).json({ 
+        message: '❌ QR Code Expired\n\nPlease contact your faculty if you believe this is an error.' 
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // STEP 5: Is the session currently active?
+    // -------------------------------------------------------------------------
+    if (session.status !== 'active') {
+      return res.status(400).json({ message: 'Session is not active or has been closed.' });
+    }
+
+    // -------------------------------------------------------------------------
+    // STEP 6 & 7: Is the student enrolled in the session's class/section & subject?
+    // -------------------------------------------------------------------------
+    const studentSection = (student.section || '').trim().toUpperCase();
+    const studentDept = (student.department || '').trim().toUpperCase();
+    const sessionClass = (session.class_name || '').trim().toUpperCase();
+
+    const isEnrolledInClass =
+      !sessionClass ||
+      sessionClass === studentSection ||
+      sessionClass === studentDept ||
+      (studentSection && sessionClass.includes(studentSection)) ||
+      (studentSection && studentSection.includes(sessionClass));
+
+    if (!isEnrolledInClass) {
+      return res.status(403).json({ 
+        message: `❌ Attendance Rejected\n\nYou are not enrolled in this laboratory session (${session.subject} - ${sessionClass}).` 
+      });
+    }
+
+    // -------------------------------------------------------------------------
+    // STEP 8: Does the session belong to the expected lab? (session.lab_id exists)
+    // -------------------------------------------------------------------------
+    if (!session.lab_id) {
+      return res.status(400).json({ message: 'Invalid lab session data.' });
+    }
+
+    // -------------------------------------------------------------------------
+    // STEP 9: Is the attendance already marked?
+    // -------------------------------------------------------------------------
+    const [existing] = await db.execute(
+      'SELECT attendance_id, status FROM attendance WHERE student_id = ? AND session_id = ?',
+      [studentId, session.session_id]
+    );
+
+    if (existing.length && existing[0].status === 'present') {
+      return res.status(400).json({ 
+        message: '⚠️ Attendance Already Marked\n\nYour attendance for this session has already been recorded.',
+        alreadyMarked: true 
+      });
+    }
+
+    const todayDate = new Date().toISOString().slice(0, 10);
+
+    // -------------------------------------------------------------------------
+    // STEP 10: Mark attendance in database
+    // -------------------------------------------------------------------------
+    if (existing.length) {
+      await db.execute(
+        "UPDATE attendance SET status = 'present', method = 'qr', marked_at = CURRENT_TIMESTAMP WHERE attendance_id = ?",
+        [existing[0].attendance_id]
+      );
+    } else {
+      await db.execute(
+        `INSERT INTO attendance (student_id, session_id, lab_id, faculty_id, subject, attend_date, status, method, marked_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'present', 'qr', CURRENT_TIMESTAMP)`,
+        [studentId, session.session_id, session.lab_id, session.faculty_id, session.subject, todayDate]
+      );
+    }
+
+    const [stInfo] = await db.execute(
+      'SELECT u.full_name, s.usn FROM students s JOIN users u ON u.user_id=s.user_id WHERE s.student_id=?',
+      [studentId]
+    );
+    const fullName = stInfo[0]?.full_name || 'Student';
+    const usn = stInfo[0]?.usn || '';
+
+    audit.log(req.user.id, 'QR_SESSION_ATTENDANCE_VERIFIED', 'attendance', studentId, `session_id=${session.session_id}, lab_id=${session.lab_id}`, req.ip);
+
+    await db.execute(
+      `INSERT INTO notifications (user_id, type, title, message)
+       VALUES (?, 'attendance', 'Attendance Marked', ?)`,
+      [req.user.id, `Verified Present for ${session.subject} (${session.class_name}).`]
+    );
+
+    const io = req.app?.get('io');
+    if (io) {
+      io.to('role:hod').to('role:faculty').emit('student:scanned', {
+        student_id: studentId,
+        session_id: session.session_id,
+        full_name: fullName,
+        usn: usn,
+        lab_id: session.lab_id,
+        subject: session.subject,
+        status: 'present',
+        method: 'qr',
+        marked_at: new Date().toISOString()
+      });
+      io.to('role:hod').to('role:faculty').emit('attendance:changed');
+      io.to(`user:${req.user.id}`).emit('notification', {
+        type: 'attendance', title: 'Attendance Marked', message: `Present in ${session.subject}`
+      });
+    }
+
+    res.json({ 
+      message: '✅ Attendance Marked Successfully',
+      session_id: session.session_id,
+      subject: session.subject,
+      class_name: session.class_name,
+      verifiedAt: new Date().toISOString(),
+      full_name: fullName
+    });
+  } catch (err) {
+    console.error('Error in markByQR:', err);
+    res.status(500).json({ message: 'Failed to record attendance: ' + err.message });
+  }
+};
+
+// Backward-compatible generateQR endpoint
+exports.generateQR = exports.createSession;
+exports.getActiveQR = exports.getStudentActiveSessions;
+
+// Standard manual & bulk mark
+exports.mark = async (req, res) => {
+  const { student_id, lab_id, status, method, attend_date, session_id } = req.body;
+  try {
+    await db.execute(
+      `INSERT INTO attendance (student_id, lab_id, faculty_id, attend_date, status, method, session_id)
+       VALUES (?,?,?,?,?,?,?)
+       ON CONFLICT (student_id, lab_id, attend_date) 
+       DO UPDATE SET status=EXCLUDED.status, method=EXCLUDED.method, marked_at=CURRENT_TIMESTAMP`,
+      [student_id, lab_id, req.user.faculty_id || null, attend_date || new Date(), status || 'present', method || 'manual', session_id || null]
+    );
+    const io = req.app.get('io');
+    io.to('role:hod').to('role:faculty').emit('attendance:changed');
+    res.json({ message: 'Marked' });
   } catch (e) { res.status(400).json({ message: e.message }); }
 };
 
-// Bulk attendance for a class
 exports.bulkMark = async (req, res) => {
-  const { lab_id, attend_date, records } = req.body; // [{student_id, status}]
+  const { lab_id, attend_date, records, session_id } = req.body;
   if (!Array.isArray(records)) return res.status(400).json({ message: 'records[] required' });
   const conn = await db.getConnection();
   try {
     for (const r of records) {
       await conn.query(
-        `INSERT INTO attendance (student_id, lab_id, faculty_id, attend_date, status, method)
-         VALUES (?,?,?,?,?,?)
+        `INSERT INTO attendance (student_id, lab_id, faculty_id, attend_date, status, method, session_id)
+         VALUES (?,?,?,?,?,?,?)
          ON CONFLICT (student_id, lab_id, attend_date) 
          DO UPDATE SET status=EXCLUDED.status, marked_at=CURRENT_TIMESTAMP`,
-        [r.student_id, lab_id, req.user.faculty_id || null, attend_date, r.status, 'manual']
+        [r.student_id, lab_id, req.user.faculty_id || null, attend_date, r.status, 'manual', session_id || null]
       );
     }
     const io = req.app.get('io');
@@ -76,134 +612,19 @@ exports.bulkMark = async (req, res) => {
   finally { conn.release(); }
 };
 
-// Generate QR token for a session — student scans and POSTs to /qr
-exports.generateQR = async (req, res) => {
-  try {
-    const { lab_id } = req.body;
-    if (!lab_id) return res.status(400).json({ message: 'lab_id is required' });
-
-    const crypto = require('crypto');
-    const todayDate = new Date().toISOString().slice(0, 10);
-    const nonce = crypto.randomBytes(8).toString('hex');
-    const timestamp = Date.now();
-
-    const [labRows] = await db.execute('SELECT lab_name, location FROM labs WHERE lab_id=?', [lab_id]);
-    const labName = labRows[0]?.lab_name || `Lab #${lab_id}`;
-
-    // Anti-proxy dynamic payload: unique per day, timestamp & random nonce
-    const payload = {
-      lab_id: Number(lab_id),
-      lab_name: labName,
-      date: todayDate,
-      faculty_id: req.user.id,
-      ts: timestamp,
-      nonce: nonce,
-      session_id: `LAB${lab_id}_${todayDate.replace(/-/g, '')}_${nonce}`
-    };
-
-    const token = Buffer.from(JSON.stringify(payload)).toString('base64');
-
-    // Generate QR code data URL (encodes both URL and token directly)
-    const os = require('os');
-    let localIP = 'localhost';
-    if (req.headers && req.headers.host && !req.headers.host.includes('localhost') && !req.headers.host.includes('127.0.0.1')) {
-      localIP = req.headers.host.split(':')[0];
-    } else {
-      const interfaces = os.networkInterfaces();
-      for (const devName in interfaces) {
-        const low = devName.toLowerCase();
-        if (low.includes('virtual') || low.includes('vbox') || low.includes('vmnet') || low.includes('wsl') || low.includes('hyper-v')) {
-          continue;
-        }
-        const iface = interfaces[devName];
-        for (let i = 0; i < iface.length; i++) {
-          const alias = iface[i];
-          if (alias.family === 'IPv4' && alias.address !== '127.0.0.1' && !alias.internal) {
-            localIP = alias.address;
-            break;
-          }
-        }
-        if (localIP !== 'localhost') break;
-      }
-    }
-
-    const qrUrl = `http://${localIP}:5173/student/attendance?qr_token=${token}`;
-    const dataUrl = await QRCode.toDataURL(qrUrl);
-
-    // Save active session in-memory
-    activeQRSessions[lab_id] = {
-      lab_id: Number(lab_id),
-      lab_name: labName,
-      location: labRows[0]?.location || 'Main Hall',
-      token,
-      dataUrl,
-      qrUrl,
-      payload,
-      createdAt: timestamp
-    };
-
-    // Update lab status to occupied when session starts
-    await db.execute("UPDATE labs SET status='occupied' WHERE lab_id=?", [lab_id]);
-    const io = req.app?.get('io');
-    if (io) {
-      io.to('role:hod').to('role:faculty').emit('lab:status_changed', { lab_id, status: 'occupied' });
-      // Broadcast live QR session directly to all connected students
-      io.to('role:student').emit('qr:active_session', activeQRSessions[lab_id]);
-    }
-
-    // Broadcast system notification to student accounts
-    try {
-      const [allStudents] = await db.execute('SELECT user_id FROM students');
-      for (const s of allStudents) {
-        await db.execute(
-          `INSERT INTO notifications (user_id, type, title, message)
-           VALUES (?, 'attendance', ?, ?)`,
-          [s.user_id, `Live QR Attendance: ${labName}`, `Faculty started a live QR attendance session for ${labName}. Click or scan to mark present!`]
-        );
-      }
-    } catch (notifErr) {
-      console.error('Notification dispatch error:', notifErr);
-    }
-
-    res.json({ 
-      token, 
-      dataUrl, 
-      payload, 
-      qrUrl,
-      lab_name: labName,
-      expiresInMinutes: 10,
-      antiProxyNotice: 'Dynamic Anti-Proxy Active: QR code generated and sent to student dashboards.' 
-    });
-  } catch (err) {
-    console.error('Error generating QR:', err);
-    res.status(500).json({ message: 'Failed to generate QR code: ' + err.message });
-  }
-};
-
-// Get active QR sessions for student dashboard
-exports.getActiveQR = async (req, res) => {
-  try {
-    const now = Date.now();
-    const activeList = Object.values(activeQRSessions).filter(s => (now - s.createdAt) <= 10 * 60 * 1000);
-    res.json(activeList);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
-
-// Get live student attendance list for a specific lab session today
 exports.getLiveLabAttendance = async (req, res) => {
   try {
     const { lab_id } = req.params;
-    const { date } = req.query;
+    const { date, session_id } = req.query;
     const targetDate = date || new Date().toISOString().slice(0, 10);
 
-    const [rows] = await db.execute(
-      `SELECT 
+    let queryStr = `
+      SELECT 
          s.student_id, 
          s.usn, 
          u.full_name, 
          s.department, 
+         s.section,
          a.status, 
          a.marked_at, 
          a.method
@@ -211,11 +632,27 @@ exports.getLiveLabAttendance = async (req, res) => {
        JOIN users u ON u.user_id = s.user_id
        LEFT JOIN attendance a 
          ON a.student_id = s.student_id 
-        AND a.lab_id = ? 
-        AND a.attend_date = ?
-       ORDER BY s.usn ASC`,
-      [lab_id, targetDate]
-    );
+    `;
+
+    let params = [];
+    if (session_id) {
+      const [sessRows] = await db.execute('SELECT class_name, subject FROM lab_sessions WHERE session_id = ?', [session_id]);
+      const className = sessRows.length ? (sessRows[0].class_name || '').trim() : '';
+
+      queryStr += ` AND a.session_id = ? `;
+      params.push(session_id);
+
+      if (className) {
+        queryStr += ` WHERE (UPPER(TRIM(s.section)) = UPPER(TRIM(?)) OR UPPER(TRIM(s.department)) = UPPER(TRIM(?))) `;
+        params.push(className, className);
+      }
+    } else {
+      queryStr += ` AND a.lab_id = ? AND a.attend_date = ? `;
+      params.push(lab_id, targetDate);
+    }
+    queryStr += ` ORDER BY s.usn ASC `;
+
+    const [rows] = await db.execute(queryStr, params);
 
     const totalCount = rows.length;
     const presentCount = rows.filter(r => r.status === 'present').length;
@@ -233,140 +670,6 @@ exports.getLiveLabAttendance = async (req, res) => {
   }
 };
 
-// Student submits QR token / URL
-exports.markByQR = async (req, res) => {
-  const { token } = req.body;
-  if (!token) return res.status(400).json({ message: 'QR token is required' });
-
-  let rawToken = token.trim();
-
-  // 1. Try URL decoding
-  try {
-    rawToken = decodeURIComponent(rawToken);
-  } catch (e) {}
-
-  // 2. Extract token parameter if full URL is supplied
-  if (rawToken.includes('qr_token=')) {
-    const match = rawToken.match(/qr_token=([^&]+)/);
-    if (match) rawToken = match[1];
-  }
-
-  // 3. Try URL decoding again after parameter extraction
-  try {
-    rawToken = decodeURIComponent(rawToken);
-  } catch (e) {}
-
-  let payload;
-  try {
-    const decoded = Buffer.from(rawToken, 'base64').toString('utf8');
-    payload = JSON.parse(decoded);
-  } catch (e1) {
-    try {
-      payload = JSON.parse(rawToken);
-    } catch (e2) {
-      return res.status(400).json({ message: 'Invalid QR token format' });
-    }
-  }
-
-  if (!payload || !payload.lab_id || !payload.date || !payload.ts) {
-    return res.status(400).json({ message: 'Invalid or tampered QR token payload' });
-  }
-
-  // 1. Anti-Proxy Verification: Strict Date Matching (with timezone boundary tolerance)
-  const currentDate = new Date().toISOString().slice(0, 10);
-  const localDate = new Date().toLocaleDateString('en-CA');
-  if (payload.date !== currentDate && payload.date !== localDate) {
-    return res.status(400).json({ 
-      message: `Anti-Proxy Protection: This QR code was generated for date ${payload.date} and cannot be used today.` 
-    });
-  }
-
-  // 2. Anti-Proxy Verification: 10-minute session expiration window
-  const ageMs = Date.now() - payload.ts;
-  if (ageMs > 10 * 60 * 1000) {
-    return res.status(400).json({ 
-      message: 'Anti-Proxy Expiration: This QR code session has expired (10-minute limit). Please ask faculty to generate a fresh QR code.' 
-    });
-  }
-
-  try {
-    const [s] = await db.execute('SELECT student_id FROM students WHERE user_id=?', [req.user.id]);
-    if (!s.length) return res.status(404).json({ message: 'Student record missing' });
-
-    const studentId = s[0].student_id;
-    const labId = payload.lab_id;
-
-    // 3. Anti-Proxy Check: Check if student already marked present today
-    const [existing] = await db.execute(
-      'SELECT attendance_id, status FROM attendance WHERE student_id = ? AND lab_id = ? AND attend_date = ?',
-      [studentId, labId, currentDate]
-    );
-
-    if (existing.length && existing[0].status === 'present') {
-      return res.json({ 
-        message: 'Attendance was already marked present for today\'s lab session.', 
-        alreadyMarked: true 
-      });
-    }
-
-    if (existing.length) {
-      await db.execute(
-        "UPDATE attendance SET status = 'present', method = 'qr', marked_at = CURRENT_TIMESTAMP WHERE attendance_id = ?",
-        [existing[0].attendance_id]
-      );
-    } else {
-      await db.execute(
-        "INSERT INTO attendance (student_id, lab_id, attend_date, status, method) VALUES (?, ?, ?, 'present', 'qr')",
-        [studentId, labId, currentDate]
-      );
-    }
-
-    const [stInfo] = await db.execute(
-      'SELECT u.full_name, s.usn FROM students s JOIN users u ON u.user_id=s.user_id WHERE s.student_id=?',
-      [studentId]
-    );
-    const fullName = stInfo[0]?.full_name || 'Student';
-    const usn = stInfo[0]?.usn || '';
-
-    // Security Anti-Proxy Audit log
-    audit.log(req.user.id, 'QR_ATTENDANCE_VERIFIED', 'attendance', studentId, `session_id=${payload.session_id || 'N/A'}, lab_id=${labId}`, req.ip);
-
-    await db.execute(
-      `INSERT INTO notifications (user_id, type, title, message)
-       VALUES (?, 'attendance', 'Attendance Marked', 'Your attendance was verified and marked present via dynamic QR code.')`,
-      [req.user.id]
-    );
-
-    const io = req.app?.get('io');
-    if (io) {
-      io.to('role:hod').to('role:faculty').emit('student:scanned', {
-        student_id: studentId,
-        full_name: fullName,
-        usn: usn,
-        lab_id: labId,
-        status: 'present',
-        method: 'qr',
-        marked_at: new Date().toISOString()
-      });
-      io.to('role:hod').to('role:faculty').emit('attendance:changed');
-      io.to(`user:${req.user.id}`).emit('notification', {
-        type: 'attendance', title: 'Attendance Marked', message: 'Verified via dynamic daily QR.'
-      });
-    }
-
-    res.json({ 
-      message: 'Attendance verified & marked via dynamic daily QR code successfully!',
-      verifiedDate: currentDate,
-      sessionId: payload.session_id || 'Active',
-      full_name: fullName
-    });
-  } catch (err) {
-    console.error('Error marking QR attendance:', err);
-    res.status(500).json({ message: 'Failed to record QR attendance: ' + err.message });
-  }
-};
-
-// Camera attendance
 exports.markByCamera = async (req, res) => {
   const { student_id, lab_id, confidence, image_path, image } = req.body;
   if (!student_id || !lab_id) return res.status(400).json({ message: 'student_id & lab_id required' });
@@ -402,19 +705,6 @@ exports.markByCamera = async (req, res) => {
     [student_id, confidence || null, savedPath]
   );
 
-  const [st] = await db.execute('SELECT user_id FROM students WHERE student_id=?', [student_id]);
-  if (st.length) {
-    const student_user_id = st[0].user_id;
-    await db.execute(
-      `INSERT INTO notifications (user_id, type, title, message)
-       VALUES (?, 'attendance', 'Attendance Marked', 'Your attendance was marked present via Camera Face Recognition.')`,
-      [student_user_id]
-    );
-    const io = req.app.get('io');
-    io.to(`user:${student_user_id}`).emit('notification', {
-      type: 'attendance', title: 'Attendance Marked', message: 'Your face was recognized.'
-    });
-  }
   const io = req.app.get('io');
   io.to('role:hod').to('role:faculty').emit('attendance:changed');
 

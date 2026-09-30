@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import StatCard from '../../components/StatCard.jsx';
-import { CalendarRange, AlertTriangle, Megaphone, ClipboardCheck, BookOpen, Plus, Download, Trash2, FileUp, Brain, Sparkles, Loader2, Clock, CheckCircle2, Users } from 'lucide-react';
+import { CalendarRange, AlertTriangle, Megaphone, ClipboardCheck, BookOpen, Plus, Download, Trash2, FileUp, Brain, Sparkles, Loader2, Clock, CheckCircle2, Users, Edit3 } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -161,34 +161,6 @@ export default function FacultyDashboard() {
               Employee ID: {user.emp_code}
             </div>
           )}
-        </div>
-
-        {/* Faculty Profile Info Strip */}
-        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700/50 grid grid-cols-2 md:grid-cols-6 gap-3">
-          <div className="bg-slate-50/80 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-100 dark:border-slate-700/50">
-            <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">Full Name</span>
-            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{user?.name || '-'}</span>
-          </div>
-          <div className="bg-slate-50/80 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-100 dark:border-slate-700/50">
-            <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">Email</span>
-            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">{user?.email || '-'}</span>
-          </div>
-          <div className="bg-slate-50/80 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-100 dark:border-slate-700/50">
-            <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">Employee ID</span>
-            <span className="text-xs font-bold font-mono text-purple-600 dark:text-purple-400">{user?.emp_code || 'N/A'}</span>
-          </div>
-          <div className="bg-slate-50/80 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-100 dark:border-slate-700/50">
-            <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">Assigned Subject</span>
-            <span className="text-xs font-bold text-violet-600 dark:text-violet-400 uppercase">{user?.subject || 'ALL SUBJECTS'}</span>
-          </div>
-          <div className="bg-slate-50/80 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-100 dark:border-slate-700/50">
-            <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">VTU Scheme</span>
-            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">{user?.scheme || '2022 Scheme'}</span>
-          </div>
-          <div className="bg-slate-50/80 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-100 dark:border-slate-700/50">
-            <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">Department</span>
-            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">{user?.department || 'Computer Science'}</span>
-          </div>
         </div>
       </div>
 

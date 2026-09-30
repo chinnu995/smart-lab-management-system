@@ -18,12 +18,37 @@ const chatbot      = require('../controllers/chatbotController');
 const experiment   = require('../controllers/experimentController');
 const testController = require('../controllers/testController');
 const rankController = require('../controllers/rankController');
+const kahoot = require('../controllers/kahootController');
+
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const profileStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'profiles');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'avatar-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const uploadProfile = multer({
+  storage: profileStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
 
 // ---- AUTH ----
 router.post('/auth/login', auth.login);
 router.post('/auth/forgot', auth.forgotPassword);
 router.post('/auth/reset', auth.resetPassword);
 router.get ('/auth/me', verifyToken, auth.me);
+router.put ('/auth/profile', verifyToken, uploadProfile.single('profile_image'), auth.updateProfile);
 router.post('/auth/register', verifyToken, requireRole('hod'), auth.register);
 router.post('/auth/verify-code', auth.verifyCode);
 router.post('/auth/signup', auth.signup);
@@ -51,10 +76,11 @@ router.put   ('/faculty/:id',                   verifyToken, requireRole('hod'),
 router.delete('/faculty/:id',                   verifyToken, requireRole('hod'), faculty.remove);
 
 // ---- LABS ----
-router.get   ('/labs',     verifyToken, lab.list);
-router.post  ('/labs',     verifyToken, requireRole('hod'), lab.create);
-router.put   ('/labs/:id', verifyToken, requireRole('hod'), lab.update);
-router.delete('/labs/:id', verifyToken, requireRole('hod'), lab.remove);
+router.get   ('/labs',              verifyToken, lab.list);
+router.post  ('/labs',              verifyToken, requireRole('hod'), lab.create);
+router.put   ('/labs/:id',          verifyToken, requireRole('hod'), lab.update);
+router.patch ('/labs/:id/location', verifyToken, requireRole('hod','faculty'), lab.updateLocation);
+router.delete('/labs/:id',          verifyToken, requireRole('hod'), lab.remove);
 
 // ---- EQUIPMENT ----
 router.get   ('/equipment',           verifyToken, equipment.list);
@@ -70,15 +96,25 @@ router.post  ('/bookings',        verifyToken, booking.create);
 router.put   ('/bookings/:id',    verifyToken, requireRole('hod','faculty'), booking.decide);
 router.delete('/bookings/:id',    verifyToken, booking.cancel);
 
-// ---- ATTENDANCE ----
-router.post('/attendance/mark',     verifyToken, requireRole('hod','faculty'), attendance.mark);
-router.post('/attendance/bulk',     verifyToken, requireRole('hod','faculty'), attendance.bulkMark);
-router.post('/attendance/qr/generate', verifyToken, requireRole('hod','faculty'), attendance.generateQR);
-router.post('/attendance/qr/submit',   verifyToken, requireRole('student'), attendance.markByQR);
-router.get ('/attendance/active-qr', verifyToken, attendance.getActiveQR);
-router.get ('/attendance/live/:lab_id', verifyToken, requireRole('hod','faculty'), attendance.getLiveLabAttendance);
-router.post('/attendance/camera',   verifyToken, attendance.markByCamera);
-router.get ('/attendance/report',   verifyToken, requireRole('hod','faculty'), attendance.report);
+// ---- ATTENDANCE & LAB SESSIONS ----
+router.post('/attendance/mark',                        verifyToken, attendance.markByQR); // Student scans QR
+router.post('/attendance/manual-mark',                 verifyToken, requireRole('hod','faculty'), attendance.mark);
+router.post('/attendance/bulk',                        verifyToken, requireRole('hod','faculty'), attendance.bulkMark);
+router.post('/attendance/qr/generate',                 verifyToken, requireRole('hod','faculty'), attendance.generateQR);
+router.post('/attendance/qr/submit',                   verifyToken, requireRole('student'), attendance.markByQR);
+router.get ('/attendance/active-qr',                   verifyToken, attendance.getActiveQR);
+
+// Lab Session Management Routes
+router.post('/attendance/sessions/create',             verifyToken, requireRole('hod','faculty'), attendance.createSession);
+router.post('/attendance/sessions/:sessionId/regenerate-qr', verifyToken, requireRole('hod','faculty'), attendance.regenerateSessionQR);
+router.post('/attendance/sessions/:sessionId/close',   verifyToken, requireRole('hod','faculty'), attendance.closeSession);
+router.get ('/attendance/sessions/faculty/active',     verifyToken, requireRole('hod','faculty'), attendance.getFacultyActiveSessions);
+router.get ('/attendance/sessions/student/active',     verifyToken, requireRole('student'), attendance.getStudentActiveSessions);
+router.get ('/attendance/sessions/hod/active',         verifyToken, requireRole('hod','faculty'), attendance.getHodActiveSessions);
+
+router.get ('/attendance/live/:lab_id',                verifyToken, requireRole('hod','faculty'), attendance.getLiveLabAttendance);
+router.post('/attendance/camera',                      verifyToken, attendance.markByCamera);
+router.get ('/attendance/report',                      verifyToken, requireRole('hod','faculty'), attendance.report);
 
 // ---- COMPLAINTS ----
 router.get ('/complaints',     verifyToken, complaint.list);
@@ -136,6 +172,11 @@ router.get ('/tests/coding/:testId',       verifyToken, requireRole('student'), 
 router.post('/tests/coding/:testId/submit', verifyToken, requireRole('student'), testController.submitCodingTest);
 router.get ('/tests/:testId',             verifyToken, testController.getTestDetails);
 router.post('/tests/:testId/submit',      verifyToken, requireRole('student'), testController.submitTest);
+
+// ---- KAHOOT LIVE QUIZ ARENA ----
+router.post('/kahoot/create',       verifyToken, requireRole('hod'), kahoot.createRoom);
+router.get ('/kahoot/room/:pin',    verifyToken, kahoot.getRoomInfo);
+router.get ('/kahoot/active-rooms', verifyToken, kahoot.listActiveRooms);
 
 // ---- HACKERRANK CODING ARENA ----
 router.get ('/coding/categories', verifyToken, coding.getCategories);

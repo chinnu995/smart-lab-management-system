@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import StatCard from '../../components/StatCard.jsx';
-import { ClipboardCheck, CalendarRange, Megaphone, AlertTriangle, QrCode, BookOpen, Download, Code2, Play, FileText, ArrowRight, Award, MessageSquare, Star, X, Brain, Clock, Sparkles } from 'lucide-react';
+import { ClipboardCheck, CalendarRange, Megaphone, AlertTriangle, QrCode, BookOpen, Download, Code2, Play, FileText, ArrowRight, Award, MessageSquare, Star, X, Brain, Clock, Sparkles, Edit3 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { useAuth } from '../../context/AuthContext.jsx';
 import StudentRanksWidget from '../../components/StudentRanksWidget.jsx';
@@ -87,30 +87,6 @@ export default function StudentDashboard() {
               USN: {user.usn}
             </div>
           )}
-        </div>
-
-        {/* Student Profile Info Strip */}
-        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700/50 grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div className="bg-slate-50/80 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-100 dark:border-slate-700/50">
-            <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">Full Name</span>
-            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{user?.name || '-'}</span>
-          </div>
-          <div className="bg-slate-50/80 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-100 dark:border-slate-700/50">
-            <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">Email</span>
-            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">{user?.email || '-'}</span>
-          </div>
-          <div className="bg-slate-50/80 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-100 dark:border-slate-700/50">
-            <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">Department</span>
-            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">{user?.department || 'Computer Science'}</span>
-          </div>
-          <div className="bg-slate-50/80 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-100 dark:border-slate-700/50">
-            <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">USN</span>
-            <span className="text-xs font-bold font-mono text-emerald-600 dark:text-emerald-400">{user?.usn || 'N/A'}</span>
-          </div>
-          <div className="bg-slate-50/80 dark:bg-slate-800/50 rounded-xl p-3 border border-slate-100 dark:border-slate-700/50">
-            <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-0.5">Role</span>
-            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 capitalize">{user?.role || '-'}</span>
-          </div>
         </div>
       </div>
 

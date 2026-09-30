@@ -381,15 +381,15 @@ INSERT INTO parent_details(student_id, parent_name, relation, email, phone) VALU
 (1, 'Mr. Hegde', 'father', 'parent@example.com', '9000000099');
 
 INSERT INTO labs(lab_name, lab_code, location, capacity, status, in_charge) VALUES
-('ADA',             'CL01', 'Block A - 201', 40, 'available', 1),
-('DBMS',            'CL02', 'Block A - 202', 40, 'available', 1),
-('LATEX',           'CL03', 'Block A - 203', 40, 'available', 1),
-('MICROCONTROLLER', 'IOT01','Block B - 105', 25, 'available', 1),
-('MONGODB',         'CL04', 'Block B - 106', 40, 'available', 1),
-('AI',              'CL05', 'Block B - 107', 40, 'available', 1),
-('JAVA',            'CL06', 'Block B - 108', 40, 'available', 1),
-('C LANGUAGE',      'CL07', 'Block B - 109', 40, 'available', 1),
-('DSA',             'CL08', 'Block B - 110', 40, 'available', 1);
+('ADA',             'CL01', '2F 01', 40, 'available', 1),
+('DBMS',            'CL02', '2F 02', 40, 'available', 1),
+('LATEX',           'CL03', '2F 03', 40, 'available', 1),
+('MICROCONTROLLER', 'IOT01','1F 05', 25, 'available', 1),
+('MONGODB',         'CL04', '1F 06', 40, 'available', 1),
+('AI',              'CL05', '3F 28', 40, 'available', 1),
+('JAVA',            'CL06', 'NBGF 12', 40, 'available', 1),
+('C LANGUAGE',      'CL07', '1F 09', 40, 'available', 1),
+('DSA',             'CL08', '1F 10', 40, 'available', 1);
 
 INSERT INTO equipment(name, serial_no, category, lab_id, status, cost) VALUES
 ('Dell OptiPlex 7090', 'PC-001', 'Desktop', 1, 'available', 55000),

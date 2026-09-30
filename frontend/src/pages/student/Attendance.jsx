@@ -77,6 +77,33 @@ export default function StudentAttendance() {
   const videoRef = useRef();
   const canvasRef = useRef(null);
 
+  const [nowTime, setNowTime] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowTime(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const getRemainingSeconds = (expiresAt) => {
+    if (!expiresAt) return 900; // default 15 min fallback
+    const target = new Date(expiresAt).getTime();
+    return Math.max(0, Math.floor((target - nowTime) / 1000));
+  };
+
+  const formatTimeLeft = (seconds) => {
+    if (seconds <= 0) return '00:00 Expired';
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
+  };
+
+  const unexpiredQRSessions = activeQRSessions.filter(session => {
+    if (!session.qr_expires_at) return true;
+    return new Date(session.qr_expires_at).getTime() > nowTime;
+  });
+
   const fetchAttendance = () => {
     api.get('/me/attendance')
       .then(r => setAtt(r.data))
@@ -84,14 +111,18 @@ export default function StudentAttendance() {
   };
 
   const fetchActiveQRSessions = () => {
-    api.get('/attendance/active-qr')
+    api.get('/attendance/sessions/student/active')
       .then(r => {
-        setActiveQRSessions(r.data);
-        if (r.data.length > 0 && r.data[0].lab_id) {
-          setSelectedLab(r.data[0].lab_id);
+        const sessions = Array.isArray(r.data) ? r.data : [];
+        setActiveQRSessions(sessions);
+        if (sessions.length > 0 && sessions[0].lab_id) {
+          setSelectedLab(sessions[0].lab_id);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // Fallback to legacy endpoint if needed
+        api.get('/attendance/active-qr').then(r => setActiveQRSessions(r.data || [])).catch(() => {});
+      });
   };
 
   useEffect(() => {
@@ -107,14 +138,16 @@ export default function StudentAttendance() {
     // Parse and auto-submit QR token from URL parameters (e.g. Google Lens scan)
     const params = new URLSearchParams(window.location.search);
     const tokenFromUrl = params.get('qr_token');
-    if (tokenFromUrl) {
-      setQrToken(tokenFromUrl);
-      const toastId = toast.loading('Processing QR code scan...');
-      api.post('/attendance/qr/submit', { token: tokenFromUrl })
-        .then(() => {
+    const sessionIdFromUrl = params.get('session_id');
+    if (tokenFromUrl || sessionIdFromUrl) {
+      if (tokenFromUrl) setQrToken(tokenFromUrl);
+      const toastId = toast.loading('Verifying session QR code...');
+      api.post('/attendance/qr/submit', { qrToken: tokenFromUrl, sessionId: sessionIdFromUrl })
+        .then((res) => {
           toast.dismiss(toastId);
-          toast.success('Attendance marked via QR link successfully!');
+          toast.success(res.data?.message || '✅ Attendance marked via QR link successfully!');
           fetchAttendance();
+          fetchActiveQRSessions();
         })
         .catch((err) => {
           toast.dismiss(toastId);
@@ -127,41 +160,55 @@ export default function StudentAttendance() {
     const socket = getSocket();
     if (!socket) return;
 
-    const handleActiveSession = (session) => {
-      setActiveQRSessions(prev => [...prev.filter(s => s.lab_id !== session.lab_id), session]);
-      if (session.lab_id) {
-        setSelectedLab(session.lab_id);
-      }
-      toast.success(`🟢 Faculty launched live session for ${session.lab_name || 'Subject Lab'}! Auto-switched lab.`, { duration: 5000 });
+    const handleActiveSession = () => {
+      fetchActiveQRSessions();
+    };
+
+    const handleSessionCreated = (session) => {
+      fetchActiveQRSessions();
+      toast.success(`📢 New Lab Session Started: ${session.subject} (${session.class_name})! Click Mark Attendance below.`, { duration: 6000 });
     };
 
     socket.on('qr:active_session', handleActiveSession);
+    socket.on('session:created', handleSessionCreated);
+    socket.on('session:closed', handleActiveSession);
     return () => {
       socket.off('qr:active_session', handleActiveSession);
+      socket.off('session:created', handleSessionCreated);
+      socket.off('session:closed', handleActiveSession);
     };
   }, []);
 
-  const submitActiveSession = async (token) => {
+  const submitActiveSession = async (session) => {
     const toastId = toast.loading('Verifying & marking attendance...');
     try {
-      await api.post('/attendance/qr/submit', { token });
+      const res = await api.post('/attendance/qr/submit', {
+        qrToken: session.qr_token || session.token,
+        sessionId: session.session_id
+      });
       toast.dismiss(toastId);
-      toast.success('🎉 Attendance verified & marked present successfully!');
+      toast.success(res.data?.message || '🎉 Attendance verified & marked present successfully!');
       fetchAttendance();
-      setActiveQRSessions(prev => prev.filter(s => s.token !== token));
+      fetchActiveQRSessions();
     } catch (err) {
       toast.dismiss(toastId);
-      toast.error(err.response?.data?.message || 'Failed to submit QR attendance');
+      const errMsg = err.response?.data?.message || 'Failed to submit QR attendance';
+      toast.error(errMsg, { duration: 6000 });
     }
   };
 
   const submitQR = async (e) => {
     e.preventDefault();
+    if (!qrToken) return toast.error('Please enter or paste QR token');
+    const toastId = toast.loading('Validating QR token...');
     try {
-      await api.post('/attendance/qr/submit', { token: qrToken });
-      toast.success('Attendance marked!');
+      const res = await api.post('/attendance/qr/submit', { qrToken: qrToken, token: qrToken });
+      toast.dismiss(toastId);
+      toast.success(res.data?.message || 'Attendance marked!');
       fetchAttendance();
+      fetchActiveQRSessions();
     } catch (err) {
+      toast.dismiss(toastId);
       toast.error(err.response?.data?.message || 'Invalid token');
     }
   };
@@ -604,55 +651,79 @@ export default function StudentAttendance() {
         </div>
       )}
 
-      {activeQRSessions.length > 0 && (
+      {unexpiredQRSessions.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm flex items-center gap-2">
+            <h3 className="font-extrabold text-slate-800 dark:text-slate-100 text-base flex items-center gap-2">
               <Radio className="text-emerald-500 animate-pulse" size={18} />
-              Live Active Lab Sessions ({activeQRSessions.length} Concurrent Subject Labs Active)
+              Today's Assigned Laboratory Sessions ({unexpiredQRSessions.length})
             </h3>
-            <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2.5 py-0.5 rounded-full">
-              Multi-Class Active
+            <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-3 py-1 rounded-full">
+              Class Specific Live Feed
             </span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {activeQRSessions.map((session) => {
+            {unexpiredQRSessions.map((session) => {
               const isSelected = Number(selectedLab) === Number(session.lab_id);
+              const remaining = getRemainingSeconds(session.qr_expires_at);
+              const isExpiringSoon = remaining <= 180;
+
               return (
                 <div 
-                  key={session.lab_id} 
+                  key={session.session_id || session.lab_id} 
                   onClick={() => setSelectedLab(session.lab_id)}
-                  className={`card bg-gradient-to-br from-slate-900 to-slate-950 text-white p-5 rounded-xl border transition-all cursor-pointer relative overflow-hidden ${
+                  className={`card bg-gradient-to-br from-slate-900 to-slate-950 text-white p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden shadow-lg ${
                     isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/40 shadow-xl' : 'border-slate-800 hover:border-slate-700'
                   }`}
                 >
                   <div className="flex flex-col justify-between h-full space-y-4">
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-start gap-3">
                         {session.dataUrl && (
-                          <div className="bg-white p-1.5 rounded-lg shrink-0 shadow">
-                            <img src={session.dataUrl} alt="Session QR" className="w-16 h-16" />
+                          <div className="bg-white p-2 rounded-xl shrink-0 shadow">
+                            <img src={session.dataUrl} alt="Session QR" className="w-16 h-16 object-contain" />
                           </div>
                         )}
                         <div>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-pulse mb-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> LIVE BROADCAST
-                          </span>
-                          <h4 className="text-base font-bold text-slate-100">{session.lab_name}</h4>
-                          <p className="text-xs text-slate-400">{session.location || 'Main Hall'}</p>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                              {session.class_name || 'MY CLASS'} SESSION
+                            </span>
+                          </div>
+                          <h4 className="text-lg font-extrabold text-white">{session.subject || session.lab_name}</h4>
+                          <p className="text-xs text-slate-300 font-mono">📍 {session.lab_name} ({session.location || '2F 01'})</p>
+                          {session.faculty_name && (
+                            <p className="text-xs text-slate-400 mt-0.5">Faculty: <strong>{session.faculty_name}</strong></p>
+                          )}
+                          <p className="text-xs text-amber-400 font-mono mt-0.5">⏰ Time: {session.start_time || '10:00'} - {session.end_time || '12:00'}</p>
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                      <div className="text-[10px] text-amber-400 font-mono">⏱️ 10-Min Window</div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); submitActiveSession(session.token); }}
-                        className="btn-primary py-2 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow flex items-center gap-1.5"
-                      >
-                        <CheckCircle2 size={14} /> Mark Present
-                      </button>
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-800/80">
+                      <div className={`text-[10px] font-mono font-bold flex items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                        isExpiringSoon 
+                          ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 animate-pulse' 
+                          : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                      }`}>
+                        <span>⏰ QR Expiry: {formatTimeLeft(remaining)}</span>
+                      </div>
+                      
+                      {session.alreadyMarked ? (
+                        <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                          <CheckCircle2 size={15} className="text-emerald-400" />
+                          PRESENT MARKED
+                        </span>
+                      ) : (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); submitActiveSession(session); }}
+                          className="btn-primary py-2 px-5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-extrabold rounded-xl shadow-md flex items-center gap-2 cursor-pointer transition-all hover:scale-105"
+                        >
+                          <QrCode size={15} /> Mark Attendance / Scan QR
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -726,13 +797,13 @@ export default function StudentAttendance() {
                         }`}
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
-                        {s.lab_name} ({s.location || 'Main'})
+                        {s.lab_name} ({s.location || '2F 01'})
                       </button>
                     ))}
                   </div>
                 ) : (
                   <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                    {activeLabObj ? `${activeLabObj.lab_name} (${activeLabObj.location || 'Main Hall'})` : 'Loading active session...'}
+                    {activeLabObj ? `${activeLabObj.lab_name} (${activeLabObj.location || '2F 01'})` : 'Loading active session...'}
                   </h4>
                 )}
               </div>

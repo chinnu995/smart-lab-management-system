@@ -1,6 +1,15 @@
 const db = require('../config/db');
 const audit = require('../utils/audit');
 
+const notifyEquipmentChange = (req) => {
+  try {
+    const io = req.app.get('io');
+    if (io) io.to('role:hod').to('role:faculty').emit('equipment:changed');
+  } catch (err) {
+    console.error('Socket notification error:', err);
+  }
+};
+
 exports.list = async (_req, res) => {
   const [rows] = await db.execute(
     `SELECT e.*, l.lab_name FROM equipment e LEFT JOIN labs l ON l.lab_id=e.lab_id ORDER BY e.equipment_id DESC`
@@ -15,6 +24,7 @@ exports.create = async (req, res) => {
     [name, serial_no || null, category || null, lab_id || null, status || 'available', purchase_date || null, cost || null, notes || null]
   );
   audit.log(req.user.id, 'CREATE_EQUIPMENT', 'equipment', r.insertId, name, req.ip);
+  notifyEquipmentChange(req);
   res.status(201).json({ equipment_id: r.insertId });
 };
 
@@ -25,11 +35,13 @@ exports.update = async (req, res) => {
   if (!sets.length) return res.json({ message: 'No changes' });
   values.push(req.params.id);
   await db.execute(`UPDATE equipment SET ${sets.join(',')} WHERE equipment_id=?`, values);
+  notifyEquipmentChange(req);
   res.json({ message: 'Updated' });
 };
 
 exports.remove = async (req, res) => {
   await db.execute('DELETE FROM equipment WHERE equipment_id=?', [req.params.id]);
+  notifyEquipmentChange(req);
   res.json({ message: 'Deleted' });
 };
 
@@ -43,6 +55,7 @@ exports.issue = async (req, res) => {
   );
   await db.execute('UPDATE equipment SET status="in_use" WHERE equipment_id=?', [equipment_id]);
   audit.log(req.user.id, 'ISSUE_EQUIPMENT', 'equipment_requests', r.insertId, `Issued to student ${student_id}`, req.ip);
+  notifyEquipmentChange(req);
   res.status(201).json({ request_id: r.insertId });
 };
 
@@ -52,5 +65,6 @@ exports.returnItem = async (req, res) => {
   if (!rows.length) return res.status(404).json({ message: 'Not found' });
   await db.execute('UPDATE equipment_requests SET return_date=NOW(), status="returned" WHERE request_id=?', [id]);
   await db.execute('UPDATE equipment SET status="available" WHERE equipment_id=?', [rows[0].equipment_id]);
+  notifyEquipmentChange(req);
   res.json({ message: 'Returned' });
 };

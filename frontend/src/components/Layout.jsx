@@ -6,12 +6,13 @@ import { getSocket } from '../services/socket';
 import toast from 'react-hot-toast';
 import {
   LayoutDashboard, ClipboardCheck, CalendarRange, AlertTriangle, Megaphone,
-  Users, GraduationCap, FlaskConical, Cpu, BarChart3, FileText, Bot, LogOut, Bell, Moon, Sun, Code2, ShieldCheck, Award, Trophy, BookOpen, Brain
+  Users, GraduationCap, FlaskConical, Cpu, BarChart3, FileText, Bot, LogOut, Bell, Moon, Sun, Code2, ShieldCheck, Award, Trophy, BookOpen, Brain, User, Gamepad2
 } from 'lucide-react';
 
 const NAV = {
   student: [
     { to: '/student', label: 'Dashboard', icon: LayoutDashboard, key: 'd' },
+    { to: '/kahoot', label: 'Live Kahoot Arena', icon: Gamepad2, key: 'q' },
     { to: '/student/attendance', label: 'Attendance', icon: ClipboardCheck, key: 'a' },
     { to: '/student/lab-manuals', label: 'Lab Manuals', icon: BookOpen, key: 'lm' },
     { to: '/student/complaints', label: 'Complaints', icon: AlertTriangle, key: 'c' },
@@ -40,6 +41,7 @@ const NAV = {
   ],
   hod: [
     { to: '/hod', label: 'Dashboard', icon: LayoutDashboard, key: 'd' },
+    { to: '/kahoot', label: 'Kahoot Quiz Arena', icon: Gamepad2, key: 'q' },
     { to: '/hod/students', label: 'Students', icon: GraduationCap, key: 's' },
     { to: '/hod/student-verification', label: 'Student Verification', icon: ShieldCheck, key: 'v' },
     { to: '/hod/faculty', label: 'Faculty', icon: Users, key: 'f' },
@@ -55,6 +57,24 @@ const NAV = {
     { to: '/hod/coding-results', label: 'Coding Results', icon: Code2, key: 'kr' },
     { to: '/hod/audit', label: 'Audit Logs', icon: FileText, key: 'u' },
   ],
+};
+
+const getImageUrl = (filePath) => {
+  if (!filePath) return null;
+  if (filePath.startsWith('http://') || filePath.startsWith('https://')) return filePath;
+  let apiHost = import.meta.env.VITE_API_URL || 'http://localhost:5005';
+  if (typeof window !== 'undefined' && window.location && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    apiHost = `http://${window.location.hostname}:5005`;
+  }
+  return `${apiHost}${filePath}`;
+};
+
+const getInitials = (name) => {
+  if (!name || typeof name !== 'string') return 'U';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'U';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 };
 
 export default function Layout() {
@@ -184,57 +204,35 @@ export default function Layout() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [links, nav]);
 
-  let bgClass = "bg-[#e0f2fe] dark:bg-slate-900";
+  let bgClass = "bg-slate-50 dark:bg-slate-950";
   let activeLinkClass = "bg-primary text-white shadow-md";
-  let sidebarBgClass = "bg-white/70 dark:bg-slate-800/60";
-  let containerStyle = {};
+  let sidebarBgClass = "bg-white/80 dark:bg-slate-900/80";
+  let glowAccent = "from-sky-500/15 via-indigo-500/10 to-blue-500/15";
 
   if (user?.role === 'student') {
-    bgClass = "bg-emerald-50/20 dark:bg-slate-950/90";
-    sidebarBgClass = "bg-white/85 dark:bg-slate-850/80 backdrop-blur-xl border border-emerald-200/50 dark:border-slate-800/80 shadow-lg";
+    bgClass = "bg-gradient-to-br from-emerald-50/90 via-teal-50/70 to-cyan-50/90 dark:from-slate-950 dark:via-slate-900 dark:to-emerald-950/40";
+    sidebarBgClass = "bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border border-emerald-200/60 dark:border-emerald-900/40 shadow-xl shadow-emerald-500/5";
     activeLinkClass = "bg-emerald-600 text-white shadow-md shadow-emerald-500/25";
-    containerStyle = {
-      backgroundImage: `url('/student-bg.png')`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center center',
-      backgroundRepeat: 'no-repeat',
-      backgroundAttachment: 'fixed'
-    };
+    glowAccent = "from-emerald-500/20 via-teal-500/15 to-cyan-500/20";
   } else if (user?.role === 'faculty') {
-    bgClass = "bg-violet-50/20 dark:bg-slate-950/90";
-    sidebarBgClass = "bg-white/85 dark:bg-slate-850/80 backdrop-blur-xl border border-violet-200/50 dark:border-slate-800/80 shadow-lg";
+    bgClass = "bg-gradient-to-br from-violet-50/90 via-purple-50/70 to-indigo-50/90 dark:from-slate-950 dark:via-slate-900 dark:to-violet-950/40";
+    sidebarBgClass = "bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border border-violet-200/60 dark:border-violet-900/40 shadow-xl shadow-violet-500/5";
     activeLinkClass = "bg-violet-600 text-white shadow-md shadow-violet-500/25";
-    containerStyle = {
-      backgroundImage: `url('/faculty-bg.png')`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center center',
-      backgroundRepeat: 'no-repeat',
-      backgroundAttachment: 'fixed'
-    };
+    glowAccent = "from-violet-500/20 via-purple-500/15 to-indigo-500/20";
   } else if (user?.role === 'hod') {
-    bgClass = "bg-sky-50/20 dark:bg-slate-950/90";
-    sidebarBgClass = "bg-white/85 dark:bg-slate-850/80 backdrop-blur-xl border border-sky-200/50 dark:border-slate-800/80 shadow-lg";
+    bgClass = "bg-gradient-to-br from-sky-50/95 via-blue-50/75 to-indigo-50/90 dark:from-slate-950 dark:via-slate-900 dark:to-sky-950/40";
+    sidebarBgClass = "bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border border-sky-200/60 dark:border-sky-900/40 shadow-xl shadow-sky-500/5";
     activeLinkClass = "bg-sky-600 text-white shadow-md shadow-sky-500/25";
-    containerStyle = {
-      backgroundImage: `url('/hod-bg.png')`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center center',
-      backgroundRepeat: 'no-repeat',
-      backgroundAttachment: 'fixed'
-    };
+    glowAccent = "from-sky-500/20 via-blue-500/15 to-indigo-500/20";
   }
-
-  const hasCustomBg = user?.role === 'student' || user?.role === 'faculty' || user?.role === 'hod';
 
   return (
     <div 
-      style={hasCustomBg ? containerStyle : {}}
-      className={`min-h-screen flex flex-col md:flex-row transition-all duration-300 relative ${bgClass}`}
+      className={`min-h-screen flex flex-col md:flex-row transition-colors duration-300 relative overflow-hidden ${bgClass}`}
     >
-      {/* Dark mode overlay for custom dashboards to preserve readability */}
-      {hasCustomBg && dark && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-[1px] pointer-events-none z-0" />
-      )}
+      {/* Role-tailored background ambient glow Orbs */}
+      <div className={`fixed -top-24 -right-24 w-96 h-96 rounded-full bg-gradient-to-br ${glowAccent} blur-3xl pointer-events-none z-0`} />
+      <div className={`fixed -bottom-24 -left-24 w-96 h-96 rounded-full bg-gradient-to-tr ${glowAccent} blur-3xl pointer-events-none z-0`} />
 
       <aside className={`relative z-10 md:w-64 md:fixed md:inset-y-0 backdrop-blur-md border border-white/40 dark:border-slate-700/40 rounded-2xl shadow-glass m-0 md:m-3 p-4 flex flex-col transition-colors duration-300 ${sidebarBgClass}`}>
         <div className="flex items-center gap-2 mb-6">
@@ -244,33 +242,89 @@ export default function Layout() {
             <div className="text-xs text-slate-500 dark:text-slate-400">Management System</div>
           </div>
         </div>
-        <nav className="flex-1 space-y-1 overflow-auto">
+        <nav className="flex-1 space-y-1.5 overflow-auto pr-1">
           {links.map(l => (
-            <NavLink key={l.to} to={l.to} end
+            <NavLink
+              key={l.to}
+              to={l.to}
+              end
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-300 hover:translate-x-1.5 hover:scale-[1.02] active:scale-95 group ${
-                  isActive ? activeLinkClass
-                           : 'hover:bg-slate-100 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200'}`
-              }>
-              <l.icon size={18} className="shrink-0 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300" />
-              <span className="text-xs font-semibold flex-1">{l.label}</span>
-              {l.key && (
-                <kbd className="bg-slate-200/60 dark:bg-slate-800/80 border border-slate-300/50 dark:border-slate-700/60 px-1.5 py-0.5 rounded text-[9px] uppercase font-mono font-bold tracking-wider text-slate-500 dark:text-slate-400 group-hover:scale-110 transition-all shadow-sm">
-                  {l.key}
-                </kbd>
+                `relative flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-300 ease-out group overflow-hidden ${
+                  isActive
+                    ? activeLinkClass + ' font-bold shadow-md pl-4'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/90 dark:hover:bg-slate-800/80 hover:translate-x-2'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  {/* Left Indicator for Active Page & Hover */}
+                  <span
+                    className={`absolute left-0 top-1/2 -translate-y-1/2 rounded-r-full transition-all duration-300 ease-out ${
+                      isActive
+                        ? 'w-1.5 h-6 bg-white dark:bg-sky-200 shadow-md opacity-100'
+                        : 'w-1 h-3 bg-sky-500/80 opacity-0 group-hover:opacity-100 group-hover:h-5'
+                    }`}
+                  />
+
+                  {/* Icon: scales slightly on hover */}
+                  <l.icon
+                    size={18}
+                    className={`shrink-0 transition-transform duration-300 ease-out group-hover:scale-115 group-hover:rotate-3 ${
+                      isActive
+                        ? 'text-white'
+                        : 'text-slate-500 dark:text-slate-400 group-hover:text-sky-600 dark:group-hover:text-sky-400'
+                    }`}
+                  />
+
+                  {/* Text: becomes more prominent on hover */}
+                  <span className={`text-xs flex-1 transition-all duration-300 ${
+                    isActive ? 'font-bold' : 'font-medium group-hover:font-bold group-hover:tracking-wide'
+                  }`}>
+                    {l.label}
+                  </span>
+
+                  {/* Keyboard shortcut badge: moves/scales subtly on hover */}
+                  {l.key && (
+                    <kbd className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-mono font-bold tracking-wider transition-all duration-300 shadow-sm ${
+                      isActive 
+                        ? 'bg-white/20 text-white border border-white/30 group-hover:scale-110 group-hover:translate-x-0.5' 
+                        : 'bg-slate-200/60 dark:bg-slate-800/80 border border-slate-300/50 dark:border-slate-700/60 text-slate-500 dark:text-slate-400 group-hover:scale-110 group-hover:translate-x-1 group-hover:border-sky-400/50 group-hover:text-sky-600 dark:group-hover:text-sky-300'
+                    }`}>
+                      {l.key}
+                    </kbd>
+                  )}
+                </>
               )}
             </NavLink>
           ))}
         </nav>
         <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
-          <div className="text-sm font-medium truncate">{user?.name}</div>
-          <div className="text-xs text-slate-500 capitalize flex items-center justify-between">
-            <span>{user?.role}</span>
-            {user?.usn && (
-              <span className="font-mono text-[9px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-650 dark:text-slate-400 font-bold border border-slate-200 dark:border-slate-700">
-                {user.usn}
-              </span>
-            )}
+          <div onClick={() => nav('/profile')} className="p-2 rounded-xl hover:bg-slate-100/80 dark:hover:bg-slate-800/60 cursor-pointer transition-colors group flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary to-indigo-500 flex items-center justify-center text-xs font-extrabold text-white shadow-sm border border-white/20 overflow-hidden shrink-0">
+              {user?.profile_image ? (
+                <img
+                  src={getImageUrl(user.profile_image)}
+                  alt={user?.name || 'User'}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                getInitials(user?.name)
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold truncate group-hover:text-primary transition-colors flex items-center justify-between">
+                <span className="truncate">{user?.name}</span>
+              </div>
+              <div className="text-xs text-slate-500 capitalize flex items-center justify-between mt-0.5">
+                <span>{user?.role}</span>
+                {user?.usn && (
+                  <span className="font-mono text-[9px] bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-650 dark:text-slate-400 font-bold border border-slate-200 dark:border-slate-700">
+                    {user.usn}
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
           <button onClick={() => { logout(); nav('/login'); }}
                   className="mt-3 w-full btn-ghost flex items-center justify-center gap-2 text-rose-600">

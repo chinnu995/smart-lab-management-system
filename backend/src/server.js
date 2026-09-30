@@ -11,6 +11,7 @@ if (!process.env.JWT_SECRET) {
 
 const routes = require('./routes');
 const initSockets = require('./sockets');
+const { autoCloseExpiredSessions } = require('./controllers/attendanceController');
 
 const app = express();
 const server = http.createServer(app);
@@ -41,6 +42,11 @@ app.use((err, _req, res, _next) => {
 });
 
 initSockets(io);
+
+// Periodically check and auto-close expired QR sessions every 10 seconds
+setInterval(() => {
+  autoCloseExpiredSessions(io);
+}, 10000);
 
 const PORT = parseInt(process.env.PORT, 10) || 5000;
 

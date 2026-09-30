@@ -1,27 +1,40 @@
 const nodemailer = require('nodemailer');
 
-function createTransporter() {
+function createTransporter(attempt = 1) {
   const user = process.env.SMTP_USER || process.env.GMAIL_USER;
   const pass = (process.env.SMTP_PASS || process.env.GMAIL_PASS || '').replace(/\s+/g, '');
   const host = process.env.SMTP_HOST || 'smtp.gmail.com';
   const port = Number(process.env.SMTP_PORT) || 587;
-  const secure = port === 465;
 
-  if (host.includes('gmail') || (user && user.includes('gmail.com'))) {
+  if (attempt === 1) {
+    // Attempt 1: Direct Gmail Service
     return nodemailer.createTransport({
       service: 'gmail',
       auth: { user, pass },
-      tls: { rejectUnauthorized: false }
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 10000
+    });
+  } else if (attempt === 2) {
+    // Attempt 2: Port 465 SSL Direct
+    return nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: { user, pass },
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 10000
+    });
+  } else {
+    // Attempt 3: Custom Host & Port
+    return nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: { user, pass },
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 10000
     });
   }
-
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: { user, pass },
-    tls: { rejectUnauthorized: false }
-  });
 }
 
 exports.sendMail = async ({ to, subject, html }) => {
@@ -36,25 +49,28 @@ exports.sendMail = async ({ to, subject, html }) => {
     console.log('------------------------------------------------------');
     const cleanText = html ? html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() : '';
     console.log(`Content:          ${cleanText}`);
-    console.log('------------------------------------------------------');
-    console.log('NOTICE: Real Gmail SMTP delivery requires your Gmail address & App Password');
-    console.log('in backend/.env (SMTP_USER and SMTP_PASS).');
     console.log('======================================================\n');
     return true;
   }
 
-  const transporter = createTransporter();
-  try {
-    const info = await transporter.sendMail({
-      from: process.env.MAIL_FROM || `"Smart Lab" <${user}>`,
-      to,
-      subject,
-      html
-    });
-    console.log(`✓ Email delivered successfully to ${to} (MessageId: ${info.messageId})`);
-    return info;
-  } catch (err) {
-    console.error(`❌ SMTP Email Delivery Failed to ${to}:`, err.message);
-    throw err;
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const transporter = createTransporter(attempt);
+      const info = await transporter.sendMail({
+        from: process.env.MAIL_FROM || `"Smart Lab" <${user}>`,
+        to,
+        subject,
+        html
+      });
+      console.log(`✓ Email delivered successfully to ${to} (MessageId: ${info.messageId})`);
+      return info;
+    } catch (err) {
+      lastError = err;
+      console.warn(`⚠️ SMTP Attempt ${attempt} failed to ${to}: ${err.message}. Retrying fallback transporter...`);
+    }
   }
+
+  console.error(`❌ SMTP Email Delivery Failed to ${to}:`, lastError?.message);
+  throw lastError;
 };

@@ -29,7 +29,12 @@ exports.attendanceTrend = async (_req, res) => {
        WHERE attend_date >= CURRENT_DATE - INTERVAL '30 days'
        GROUP BY attend_date ORDER BY attend_date`
   );
-  res.json(rows);
+  res.json((rows || []).map(r => ({
+    date: r.date,
+    present: Number(r.present || 0),
+    absent: Number(r.absent || 0),
+    late: Number(r.late || 0)
+  })));
 };
 
 exports.labUtilization = async (_req, res) => {
@@ -40,33 +45,47 @@ exports.labUtilization = async (_req, res) => {
        FROM labs l LEFT JOIN bookings b ON b.lab_id=l.lab_id
        GROUP BY l.lab_id, l.lab_name ORDER BY total DESC`
   );
-  res.json(rows);
+  res.json((rows || []).map(r => ({
+    lab_name: r.lab_name,
+    total: Number(r.total || 0),
+    approved: Number(r.approved || 0)
+  })));
 };
 
 exports.equipmentStatus = async (_req, res) => {
   const [rows] = await db.query(
     `SELECT status, COUNT(*) AS count FROM equipment GROUP BY status`
   );
-  res.json(rows);
+  res.json((rows || []).map(r => ({
+    status: r.status,
+    count: Number(r.count || 0)
+  })));
 };
 
 exports.complaintResolution = async (_req, res) => {
   const [rows] = await db.query(
     `SELECT status, COUNT(*) AS count FROM complaints GROUP BY status`
   );
-  res.json(rows);
+  res.json((rows || []).map(r => ({
+    status: r.status,
+    count: Number(r.count || 0)
+  })));
 };
 
 // Heatmap: lab x hour-of-day
 exports.heatmap = async (_req, res) => {
   const [rows] = await db.query(
-    `SELECT l.lab_name, EXTRACT(HOUR FROM b.start_time)::INT AS hour, COUNT(*) AS bookings
-       FROM bookings b JOIN labs l ON l.lab_id=b.lab_id
-       WHERE b.status='approved'
-       GROUP BY l.lab_id, l.lab_name, EXTRACT(HOUR FROM b.start_time)
+    `SELECT l.lab_name, HOUR(b.start_time) AS hour, COUNT(b.booking_id) AS bookings
+       FROM labs l
+       LEFT JOIN bookings b ON b.lab_id=l.lab_id AND b.status='approved'
+       GROUP BY l.lab_id, l.lab_name, HOUR(b.start_time)
        ORDER BY l.lab_name, hour`
   );
-  res.json(rows);
+  res.json((rows || []).map(r => ({
+    lab_name: r.lab_name,
+    hour: Number(r.hour || 0),
+    bookings: Number(r.bookings || 0)
+  })));
 };
 
 exports.facultyPerformance = async (_req, res) => {
@@ -80,5 +99,9 @@ exports.facultyPerformance = async (_req, res) => {
        LEFT JOIN complaints c ON c.resolved_by=u.user_id AND c.status='resolved'
        GROUP BY f.faculty_id, u.full_name`
   );
-  res.json(rows);
+  res.json((rows || []).map(r => ({
+    full_name: r.full_name,
+    classes_marked: Number(r.classes_marked || 0),
+    complaints_resolved: Number(r.complaints_resolved || 0)
+  })));
 };

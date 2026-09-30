@@ -42,9 +42,13 @@ import StudentVerification from './pages/hod/StudentVerification.jsx';
 import FacultyPerformance from './pages/hod/FacultyPerformance.jsx';
 import OverallToppers from './pages/OverallToppers.jsx';
 import SubjectToppers from './pages/SubjectToppers.jsx';
+import Profile from './pages/Profile.jsx';
 import StudentLabManuals from './pages/student/LabManuals.jsx';
 import FacultyLabManuals from './pages/faculty/LabManuals.jsx';
 import FacultyMcqTests from './pages/faculty/McqTests.jsx';
+import KahootLobby from './pages/kahoot/KahootLobby.jsx';
+import KahootHost from './pages/kahoot/KahootHost.jsx';
+import KahootPlay from './pages/kahoot/KahootPlay.jsx';
 
 function Private({ children, roles }) {
   const { user } = useAuth();
@@ -73,6 +77,10 @@ export default function App() {
         <Route path="chatbot" element={<Chatbot />} />
         <Route path="overall-toppers" element={<OverallToppers />} />
         <Route path="subject-toppers" element={<SubjectToppers />} />
+        <Route path="profile" element={<Profile />} />
+        <Route path="kahoot" element={<KahootLobby />} />
+        <Route path="kahoot/host" element={<Private roles={['hod']}><KahootHost/></Private>} />
+        <Route path="kahoot/play" element={<KahootPlay />} />
 
         {/* Student */}
         <Route path="student" element={<Private roles={['student']}><StudentDashboard/></Private>} />

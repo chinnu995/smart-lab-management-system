@@ -6,7 +6,7 @@ async function addCLanguage() {
     if (existing.length === 0) {
       const [res] = await db.execute(
         `INSERT INTO labs (lab_name, lab_code, location, capacity, status, in_charge) 
-         VALUES ('C LANGUAGE', 'CL07', 'Block B - 109', 40, 'available', 1)`
+         VALUES ('C LANGUAGE', 'CL07', '1F 09', 40, 'available', 1)`
       );
       console.log('✅ Successfully added C LANGUAGE to subjects/labs table:', res);
     } else {

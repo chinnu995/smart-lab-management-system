@@ -30,6 +30,13 @@ exports.update = async (req, res) => {
   res.json({ message: 'Updated' });
 };
 
+exports.updateLocation = async (req, res) => {
+  const { location } = req.body;
+  if (!location || !String(location).trim()) return res.status(400).json({ message: 'Location is required' });
+  await db.execute('UPDATE labs SET location=? WHERE lab_id=?', [String(location).trim(), req.params.id]);
+  res.json({ message: 'Location updated', location: String(location).trim() });
+};
+
 exports.remove = async (req, res) => {
   await db.execute('DELETE FROM labs WHERE lab_id=?', [req.params.id]);
   res.json({ message: 'Deleted' });

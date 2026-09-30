@@ -655,14 +655,16 @@ export default function Signup() {
                               value={subject}
                               onChange={e => setSubject(e.target.value)}
                             >
-                              <option value="ADA">ADA (Analysis & Design of Algorithms)</option>
-                              <option value="DBMS">DBMS (Database Management Systems)</option>
-                              <option value="LATEX">LATEX (LaTeX Document Formatting)</option>
-                              <option value="MONGODB">MONGODB (NoSQL Document Database)</option>
-                              <option value="AI">AI (Artificial Intelligence)</option>
-                              <option value="JAVA">JAVA (Java Programming)</option>
-                              <option value="PYTHON">PYTHON (Python Scripting)</option>
-                              <option value="OPERATING SYSTEMS">OPERATING SYSTEMS (OS Core Concepts)</option>
+                              <option value="Java Lab">Java Lab</option>
+                              <option value="DBMS Lab">DBMS Lab</option>
+                              <option value="Python Lab">Python Lab</option>
+                              <option value="Data Structures Lab">Data Structures Lab</option>
+                              <option value="ADA Lab">ADA Lab (Analysis & Design of Algorithms)</option>
+                              <option value="Operating Systems Lab">Operating Systems Lab</option>
+                              <option value="AI & Machine Learning Lab">AI & Machine Learning Lab</option>
+                              <option value="C Programming Lab">C Programming Lab</option>
+                              <option value="Web Technologies Lab">Web Technologies Lab</option>
+                              <option value="Computer Networks Lab">Computer Networks Lab</option>
                             </select>
                           </div>
                         </div>

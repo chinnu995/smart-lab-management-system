@@ -72,7 +72,7 @@ exports.login = async (req, res) => {
 
   res.json({
     token,
-    user: { id: user.user_id, name: user.full_name, email: user.email, role: user.role, usn, emp_code, department, subject, scheme }
+    user: { id: user.user_id, name: user.full_name, email: user.email, role: user.role, profile_image: user.profile_image || null, usn, emp_code, department, subject, scheme }
   });
 };
 
@@ -97,21 +97,115 @@ exports.register = async (req, res) => {
 };
 
 exports.me = async (req, res) => {
-  const [rows] = await db.execute(
-    'SELECT u.user_id, u.full_name, u.email, u.role, u.phone, u.profile_image, s.usn, s.department AS student_dept, s.scheme AS student_scheme, f.emp_code, f.department AS faculty_dept, f.subject AS faculty_subject, f.scheme AS faculty_scheme FROM users u LEFT JOIN students s ON u.user_id = s.user_id LEFT JOIN faculty f ON u.user_id = f.user_id WHERE u.user_id=?',
-    [req.user.id]
-  );
-  const u = rows[0] || null;
-  if (u) {
-    u.department = u.role === 'student' ? u.student_dept : u.role === 'faculty' ? u.faculty_dept : 'Computer Science & Engineering';
+  try {
+    const [rows] = await db.execute(
+      'SELECT u.user_id, u.full_name, u.email, u.role, u.phone, u.profile_image, s.usn, s.semester, s.batch_year, s.department AS student_dept, s.scheme AS student_scheme, f.emp_code, f.department AS faculty_dept, f.subject AS faculty_subject, f.scheme AS faculty_scheme FROM users u LEFT JOIN students s ON u.user_id = s.user_id LEFT JOIN faculty f ON u.user_id = f.user_id WHERE u.user_id=?',
+      [req.user.id]
+    );
+    const u = rows[0] || null;
+    if (u) {
+      u.department = u.role === 'student' ? (u.student_dept || 'Computer Science & Engineering') : u.role === 'faculty' ? (u.faculty_dept || 'Computer Science & Engineering') : 'Computer Science & Engineering';
+      u.scheme = u.role === 'student' ? u.student_scheme : u.faculty_scheme;
+      u.subject = u.faculty_subject || null;
+      delete u.student_dept;
+      delete u.faculty_dept;
+      delete u.student_scheme;
+      delete u.faculty_scheme;
+    }
+    res.json(u);
+  } catch (err) {
+    console.error('Error in me controller:', err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.updateProfile = async (req, res) => {
+  const userId = req.user.id;
+  const { full_name, phone, department, academic_year, semester, current_password, new_password } = req.body;
+
+  try {
+    const [userRows] = await db.execute('SELECT * FROM users WHERE user_id=?', [userId]);
+    if (!userRows.length) return res.status(404).json({ message: 'User not found' });
+    const user = userRows[0];
+
+    // Handle profile image upload if file attached
+    if (req.file) {
+      const profileImageUrl = `/uploads/profiles/${req.file.filename}`;
+      await db.execute('UPDATE users SET profile_image=? WHERE user_id=?', [profileImageUrl, userId]);
+    }
+
+    // Handle password update if requested
+    if (new_password) {
+      if (!current_password) {
+        return res.status(400).json({ message: 'Current password is required to update password' });
+      }
+      const isMatch = await bcrypt.compare(current_password, user.password_hash);
+      if (!isMatch) {
+        return res.status(400).json({ message: 'Incorrect current password' });
+      }
+      if (new_password.length < 6) {
+        return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+      }
+      const hash = await bcrypt.hash(new_password, 10);
+      await db.execute('UPDATE users SET password_hash=? WHERE user_id=?', [hash, userId]);
+    }
+
+    // Update basic user profile (full_name, phone)
+    if (full_name || phone) {
+      await db.execute(
+        'UPDATE users SET full_name = COALESCE(?, full_name), phone = COALESCE(?, phone) WHERE user_id = ?',
+        [full_name ? full_name.trim() : null, phone ? phone.trim() : null, userId]
+      );
+    }
+
+    // Update role-specific department
+    if (department) {
+      const deptTrim = department.trim();
+      if (user.role === 'student') {
+        await db.execute('UPDATE students SET department = ? WHERE user_id = ?', [deptTrim, userId]);
+      } else if (user.role === 'faculty') {
+        await db.execute('UPDATE faculty SET department = ? WHERE user_id = ?', [deptTrim, userId]);
+      }
+    }
+
+    // Update student-specific profile fields (semester/academic year)
+    if (user.role === 'student') {
+      let semVal = semester ? parseInt(semester) : null;
+      if (academic_year && !semVal) {
+        if (academic_year.includes('1')) semVal = 1;
+        else if (academic_year.includes('2')) semVal = 3;
+        else if (academic_year.includes('3')) semVal = 5;
+        else if (academic_year.includes('4')) semVal = 7;
+      }
+      if (semVal) {
+        await db.execute('UPDATE students SET semester = ? WHERE user_id = ?', [semVal, userId]);
+      }
+    }
+
+    audit.log(userId, 'UPDATE_PROFILE', 'users', userId, 'Updated profile details', req.ip);
+
+    // Fetch updated user info
+    const [updatedUserRows] = await db.execute(
+      'SELECT u.user_id, u.full_name, u.email, u.role, u.phone, u.profile_image, s.usn, s.semester, s.batch_year, s.department AS student_dept, s.scheme AS student_scheme, f.emp_code, f.department AS faculty_dept, f.subject AS faculty_subject, f.scheme AS faculty_scheme FROM users u LEFT JOIN students s ON u.user_id = s.user_id LEFT JOIN faculty f ON u.user_id = f.user_id WHERE u.user_id=?',
+      [userId]
+    );
+    const u = updatedUserRows[0];
+    u.id = u.user_id;
+    u.name = u.full_name;
+    u.profile_image = u.profile_image || null;
+    u.department = u.role === 'student' ? (u.student_dept || 'Computer Science & Engineering') : u.role === 'faculty' ? (u.faculty_dept || 'Computer Science & Engineering') : 'Computer Science & Engineering';
     u.scheme = u.role === 'student' ? u.student_scheme : u.faculty_scheme;
     u.subject = u.faculty_subject || null;
     delete u.student_dept;
     delete u.faculty_dept;
     delete u.student_scheme;
     delete u.faculty_scheme;
+
+    res.json({ message: 'Profile updated successfully', user: u });
+  } catch (err) {
+    console.error('Update profile error:', err);
+    res.status(500).json({ message: err.message || 'Failed to update profile' });
   }
-  res.json(u);
 };
 
 exports.forgotPassword = async (req, res) => {
@@ -305,14 +399,17 @@ exports.signup = async (req, res) => {
   try {
     const hash = await bcrypt.hash(password, 10);
 
-    // Create user with is_active=false (pending email verification)
-    const [r] = await conn.query(
-      'INSERT INTO users (full_name, email, password_hash, role, phone, is_active) VALUES (?,?,?,?,?,?)',
-      [full_name, email, hash, role, phone || null, false]
-    );
-    const userId = r.insertId;
+    // Ensure department column exists in users table
+    await conn.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(120)').catch(() => {});
 
     const dept = department || 'Computer Science & Engineering';
+
+    // Create user with is_active=false (pending email verification)
+    const [r] = await conn.query(
+      'INSERT INTO users (full_name, email, password_hash, role, phone, department, is_active) VALUES (?,?,?,?,?,?,?)',
+      [full_name, email, hash, role, phone || null, dept, false]
+    );
+    const userId = r.insertId;
 
     // Create role-specific record
     if (role === 'student') {

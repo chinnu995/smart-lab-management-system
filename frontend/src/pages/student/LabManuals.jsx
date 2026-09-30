@@ -152,7 +152,7 @@ export default function StudentLabManuals() {
             <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-300 px-3.5 py-2 rounded-xl text-xs font-bold shrink-0">
               <Radio size={14} className="text-emerald-500 animate-pulse shrink-0" />
               <span>
-                {activeLabObj ? `AUTO-SYNCED: ${activeLabObj.lab_name} (${activeLabObj.location || 'Main'})` : 'Auto-Switched to Active Faculty Lab'}
+                {activeLabObj ? `AUTO-SYNCED: ${activeLabObj.lab_name} (${activeLabObj.location || '2F 01'})` : 'Auto-Switched to Active Faculty Lab'}
               </span>
             </div>
           )}

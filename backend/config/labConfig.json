@@ -15,6 +15,8 @@
   ],
 
   "defaultLanguage": {
+    "BPOPK103": "c",
+    "BPOPK203": "c",
     "BCSL305":  "c",
     "BCS306A":  "java",
     "BCS306B":  "cpp",

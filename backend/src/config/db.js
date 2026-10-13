@@ -65,15 +65,22 @@ function formatPgQuery(sql, params = []) {
 
   // Replace MySQL specific date/time functions
   formattedSql = formattedSql.replace(/CURDATE\(\)/gi, 'CURRENT_DATE');
+  formattedSql = formattedSql.replace(/NOW\(\)/gi, 'CURRENT_TIMESTAMP');
   formattedSql = formattedSql.replace(/INTERVAL (\d+) DAY/gi, "INTERVAL '$1 days'");
   formattedSql = formattedSql.replace(/HOUR\(([^)]+)\)/gi, 'EXTRACT(HOUR FROM $1)');
 
-  const trimmed = formattedSql.trim();
+  // Replace MySQL INSERT IGNORE with PostgreSQL ON CONFLICT DO NOTHING
+  formattedSql = formattedSql.replace(/INSERT\s+IGNORE\s+INTO/gi, 'INSERT INTO');
+
+  let trimmed = formattedSql.trim();
   const isInsert = /^INSERT\s+INTO/i.test(trimmed);
   const isUpdateOrDelete = /^(UPDATE|DELETE)/i.test(trimmed);
 
   if (isInsert && !/RETURNING/i.test(trimmed)) {
-    formattedSql += ' RETURNING *';
+    trimmed = trimmed.replace(/;\s*$/, '');
+    formattedSql = trimmed + ' RETURNING *';
+  } else {
+    formattedSql = trimmed;
   }
 
   return { formattedSql, finalParams, isInsert, isUpdateOrDelete };
@@ -84,7 +91,8 @@ async function queryWithClient(client, sql, params = []) {
   const result = await client.query(formattedSql, finalParams);
 
   if (isInsert) {
-    const insertedRow = result.rows[0] || {};
+    const rows = Array.isArray(result) ? (result[result.length - 1]?.rows || []) : (result?.rows || []);
+    const insertedRow = rows[0] || {};
     const insertId =
       insertedRow.id ||
       insertedRow.user_id ||
@@ -156,14 +164,36 @@ async function verifyConnectionWithRetry({ maxAttempts = 5, initialDelayMs = 200
       await client.query(`
         CREATE TABLE IF NOT EXISTS login_otps (
           email VARCHAR(191) PRIMARY KEY,
-          otp VARCHAR(6) NOT NULL,
-          expires_at TIMESTAMPTZ NOT NULL
+          otp_hash VARCHAR(255) NOT NULL,
+          attempts INT DEFAULT 0,
+          resend_count INT DEFAULT 0,
+          expires_at TIMESTAMPTZ NOT NULL,
+          last_sent_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS signup_otps (
           email VARCHAR(191) PRIMARY KEY,
-          otp VARCHAR(6) NOT NULL,
-          expires_at TIMESTAMPTZ NOT NULL
+          otp_hash VARCHAR(255) NOT NULL,
+          attempts INT DEFAULT 0,
+          resend_count INT DEFAULT 0,
+          expires_at TIMESTAMPTZ NOT NULL,
+          last_sent_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         );
+        ALTER TABLE signup_otps ADD COLUMN IF NOT EXISTS otp_hash VARCHAR(255);
+        ALTER TABLE signup_otps ADD COLUMN IF NOT EXISTS attempts INT DEFAULT 0;
+        ALTER TABLE signup_otps ADD COLUMN IF NOT EXISTS resend_count INT DEFAULT 0;
+        ALTER TABLE signup_otps ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+        ALTER TABLE signup_otps ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+        ALTER TABLE signup_otps ALTER COLUMN otp DROP NOT NULL;
+
+        ALTER TABLE login_otps ADD COLUMN IF NOT EXISTS otp_hash VARCHAR(255);
+        ALTER TABLE login_otps ADD COLUMN IF NOT EXISTS attempts INT DEFAULT 0;
+        ALTER TABLE login_otps ADD COLUMN IF NOT EXISTS resend_count INT DEFAULT 0;
+        ALTER TABLE login_otps ADD COLUMN IF NOT EXISTS last_sent_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+        ALTER TABLE login_otps ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+        ALTER TABLE login_otps ALTER COLUMN otp DROP NOT NULL;
+
         ALTER TABLE faculty ADD COLUMN IF NOT EXISTS subject VARCHAR(100);
         ALTER TABLE faculty ADD COLUMN IF NOT EXISTS scheme VARCHAR(50);
         ALTER TABLE students ADD COLUMN IF NOT EXISTS section VARCHAR(50);
@@ -218,6 +248,52 @@ async function verifyConnectionWithRetry({ maxAttempts = 5, initialDelayMs = 200
         UPDATE labs SET location = 'NBGF 12' WHERE UPPER(lab_name) LIKE '%JAVA%';
         UPDATE labs SET location = '1F 09' WHERE UPPER(lab_name) LIKE '%C %' OR UPPER(lab_name) = 'C' OR UPPER(lab_name) = 'C LANGUAGE';
         UPDATE labs SET location = '1F 10' WHERE UPPER(lab_name) LIKE '%DSA%' OR UPPER(lab_name) LIKE '%DATA STRUCTURE%';
+
+        CREATE TABLE IF NOT EXISTS schemes (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(100) NOT NULL UNIQUE,
+          year_label VARCHAR(50),
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS subjects (
+          id SERIAL PRIMARY KEY,
+          scheme_id INT NOT NULL REFERENCES schemes(id) ON DELETE CASCADE,
+          dept VARCHAR(120) NOT NULL,
+          semester INT NOT NULL,
+          code VARCHAR(50) NOT NULL,
+          name VARCHAR(150) NOT NULL,
+          description TEXT,
+          type VARCHAR(20) DEFAULT 'lab' CHECK (type IN ('lab', 'theory', 'elective')),
+          icon_key VARCHAR(50) DEFAULT 'Code2',
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT uniq_scheme_dept_sem_code UNIQUE (scheme_id, dept, semester, code)
+        );
+
+        CREATE TABLE IF NOT EXISTS lab_programs (
+          id SERIAL PRIMARY KEY,
+          subject_id INT NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+          program_no INT NOT NULL,
+          title VARCHAR(255) NOT NULL,
+          description TEXT,
+          starter_code JSONB DEFAULT '{}'::jsonb,
+          test_cases JSONB DEFAULT '[]'::jsonb,
+          language VARCHAR(50) DEFAULT 'python',
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          CONSTRAINT uniq_subject_program_no UNIQUE (subject_id, program_no)
+        );
+
+        CREATE TABLE IF NOT EXISTS student_subjects (
+          student_id INT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+          subject_id INT NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+          created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (student_id, subject_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_subjects_scheme_dept_sem ON subjects(scheme_id, dept, semester);
+        CREATE INDEX IF NOT EXISTS idx_lab_programs_subject ON lab_programs(subject_id);
+        CREATE INDEX IF NOT EXISTS idx_student_subjects_student ON student_subjects(student_id);
+        ALTER TABLE students ADD COLUMN IF NOT EXISTS scheme VARCHAR(50);
       `);
       client.release();
       return;

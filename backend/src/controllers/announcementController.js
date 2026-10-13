@@ -43,7 +43,7 @@ exports.remove = async (req, res) => {
 
 exports.markRead = async (req, res) => {
   await db.execute(
-    'INSERT IGNORE INTO announcement_reads (announcement_id, user_id) VALUES (?,?)',
+    'INSERT INTO announcement_reads (announcement_id, user_id) VALUES (?,?) ON CONFLICT DO NOTHING',
     [req.params.id, req.user.id]
   );
   res.json({ message: 'Marked as read' });

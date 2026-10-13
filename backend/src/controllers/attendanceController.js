@@ -693,12 +693,17 @@ exports.markByCamera = async (req, res) => {
     }
   }
 
+  const [labInfo] = await db.execute('SELECT lab_name FROM labs WHERE lab_id = ?', [lab_id]);
+  const [activeSess] = await db.execute("SELECT session_id, subject FROM lab_sessions WHERE lab_id = ? AND status = 'active'", [lab_id]);
+  const subjectVal = activeSess.length ? activeSess[0].subject : (labInfo.length ? labInfo[0].lab_name : null);
+  const sessionVal = activeSess.length ? activeSess[0].session_id : null;
+
   await db.execute(
-    `INSERT INTO attendance (student_id, lab_id, attend_date, status, method)
-     VALUES (?,?,CURRENT_DATE, 'present', 'camera')
+    `INSERT INTO attendance (student_id, lab_id, subject, session_id, attend_date, status, method)
+     VALUES (?,?,?,?,CURRENT_DATE, 'present', 'camera')
      ON CONFLICT (student_id, lab_id, attend_date) 
-     DO UPDATE SET status='present', method='camera', marked_at=CURRENT_TIMESTAMP`,
-    [student_id, lab_id]
+     DO UPDATE SET status='present', method='camera', subject=EXCLUDED.subject, marked_at=CURRENT_TIMESTAMP`,
+    [student_id, lab_id, subjectVal, sessionVal]
   );
   await db.execute(
     'INSERT INTO face_attendance (student_id, confidence, image_path) VALUES (?,?,?)',

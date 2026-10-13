@@ -1,183 +1,208 @@
-# Smart Lab Management System
+# Smart Lab Management System 🚀
 
-A full-stack Smart Lab Management System for colleges with real-time analytics, camera/QR attendance, AI chatbot, announcements, parent notifications, and role-based access control.
-
-**Stack:** React + Vite + Tailwind + Recharts + Socket.io-client (frontend) · Node.js + Express + JWT + Bcrypt + Socket.io + Nodemailer + Twilio (backend) · MySQL (database)
-
-**Team:** Chinmay Hegde (Full Stack) · Shreesha Amathe (Security) · Kalashree P N (Graphics) · Kirankumar R (UI/UX)
+A comprehensive, full-stack Smart Lab Management & VTU Curriculum Coding Arena built for engineering institutions. Featuring real-time analytics, VTU Scheme-Aware lab curriculum management, camera/QR attendance, top company placement practice, Kahoot-style live lab quizzes, AI chatbot, and role-based access control.
 
 ---
 
-## Folder structure
+## 🛠️ Tech Stack
 
-```
-smart-lab/
-├── backend/        # Express + Socket.io API
-├── frontend/       # React + Vite SPA
-└── database/
-    └── schema.sql  # Full MySQL schema + triggers + procedures + seed
-```
-
-## Prerequisites
-
-- **Node.js 18+** and npm
-- **MySQL 8+** running locally (or remote)
+- **Frontend:** React 18, Vite, Tailwind CSS, Lucide Icons, Recharts, Socket.io-client
+- **Backend:** Node.js, Express.js, JWT Authentication, Bcrypt, Socket.io, Nodemailer (Gmail SMTP / SSL)
+- **Database:** **Supabase (PostgreSQL)** with Connection Pooling & SSL (`pg` / `node-postgres`)
+- **Code Execution:** Sandboxed multi-language runner (C, C++, Java, Python, JavaScript, SQL)
 
 ---
 
-## 1) Database setup
+## 🌟 Key Highlights & Features
 
-```bash
-mysql -u root -p < database/schema.sql
-```
+### 1. VTU Scheme-Aware Coding Arena 💻
+- **Strict Scheme Scoping:** Dedicated curriculum mapping for **2022 Scheme** and **2025 Scheme**.
+- **Database as Single Source of Truth:** Student's scheme, department, and semester are always resolved from Supabase (`users` and `students` tables via USN branch mapping).
+- **Semester Locking:** Students strictly see only lab programs for their current enrolled semester—tampering and cross-semester browsing are blocked both client-side and server-side (HTTP 403 / strict filtering).
+- **Semester 1 & 2 First Year Labs Included:**
+  - **Semester 1:** Principles of Programming Using C (`BPOPK103` / `1BPOPL107`)
+  - **Semester 2:** Python Programming Lab (`BPLCK205B` / `1BPOPL207`)
+- **Higher Semester Labs:** Data Structures (`BCSL305`), Object Oriented Programming with Java (`22CSL35`), Analysis & Design of Algorithms (`BCS401`), Database Management Systems, Computer Networks, and more.
+- **Elective Selection:** Students can choose or drop department electives in real time.
+- **HOD CSV Curriculum Importer:** Upload or paste VTU syllabus CSVs with full dry-run preview, syntax validation, and atomic transactional rollback.
 
-This creates the `smart_lab_db` database with all tables, triggers, stored procedures, views, and seed data (1 HOD, 1 Faculty, 1 Student, 3 Labs, equipment, timetable, sample attendance).
+### 2. Top Company Placement Arena 🏢
+- **190+ Placement Questions & Patterns:** Categorized by subject (DSA, ADA, DBMS, Java, Python, OS, AI).
+- **Top Recruiter Filters:** Filter questions asked by:
+  - **Google** (Two Pointers, Sliding Window, Word Break, Tree DP)
+  - **Microsoft** (Spiral Matrix, Balanced Parentheses, Merge Intervals, Knapsack)
+  - **EdgeVerve Systems** (Currency Denomination Coin Change, Stock Price Monotonic Stack, Subarray Sum, Transaction Audit Log)
+  - **Amazon**, **Infosys**, **TCS Digital**, **Goldman Sachs**
+- **Full HackerRank-Style IDE:** Custom input support, sample and hidden test case runner, live execution time benchmarking, submission history, and class leaderboard.
+
+### 3. Smart Attendance System 📷
+- **QR Code Attendance:** Faculty generates dynamic QR codes with 15-minute expiration; students scan via device camera.
+- **Bulk Marking:** Faculty can mark attendance per batch with Present/Absent/Late status.
+- **Parent Notifications:** Automatic email and SMS notifications when student attendance drops below 75%.
+- **Camera Worker Stub:** Integration hook for automated OpenCV / face-recognition camera devices.
+
+### 4. Interactive Live Kahoot-Style Quiz 🎮
+- Real-time multiplayer lab quiz engine powered by Socket.io.
+- Faculty/HOD can host live quiz sessions with Game PINs.
+- Live leaderboard, player streaks, and instant score updates.
+
+### 5. Lab Management, Equipment & Analytics 📊
+- Lab timetable scheduling and student booking requests.
+- Real-time approval/rejection alerts via Socket.io.
+- Equipment malfunction complaints tracking and status resolution.
+- HOD analytics dashboard: attendance trends, lab utilization heatmaps, faculty performance, and tamper-proof audit logs.
 
 ---
 
-## 2) Backend setup
+## 📁 Repository Structure
+
+```
+smart-lab-management-system/
+├── backend/
+│   ├── config/              # Lab config & non-runnable subject mappings
+│   ├── scripts/             # Database migrations, seeders, and automated tests
+│   │   ├── migrate_vtu_curriculum.js     # VTU curriculum schema migration
+│   │   ├── importLabPrograms.js          # CSV lab program importer
+│   │   ├── runSchemeCurriculumTests.js   # 17-point automated test suite
+│   │   └── seed_placement_challenges.js  # Upserts top company placement questions
+│   ├── seed/
+│   │   └── data/            # Official VTU 2022 & 2025 CSV syllabus files
+│   ├── src/
+│   │   ├── config/          # Supabase PostgreSQL connection pool
+│   │   ├── controllers/     # Coding, attendance, auth, booking, analytics controllers
+│   │   ├── data/            # Placement patterns & starter code templates
+│   │   ├── services/        # Multi-language code runner & email services
+│   │   └── utils/           # CSV importer, mailer, OTP helpers
+│   └── server.js            # Express & Socket.io server entry point
+├── frontend/
+│   ├── src/
+│   │   ├── components/      # Navigation, layouts, modals
+│   │   ├── pages/
+│   │   │   ├── student/     # PracticeSkills, HackerRankIDE, SubjectPrograms, Attendance
+│   │   │   ├── faculty/     # MarkAttendance, LabManuals, Complaints
+│   │   │   ├── hod/         # Analytics, Students, Faculty, LabManagement
+│   │   │   └── kahoot/      # Live multiplayer lab quiz lobby & host
+│   │   └── services/        # Axios API client
+│   └── vite.config.js       # Vite configuration
+└── README.md
+```
+
+---
+
+## ⚙️ Prerequisites
+
+- **Node.js**: v18.x or later
+- **npm**: v9.x or later
+- **Supabase Account**: A free Supabase project with PostgreSQL enabled
+
+---
+
+## 🚀 Setup & Installation
+
+### 1. Database Configuration (Supabase)
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. Go to **Project Settings** → **Database** → **Connection string** (URI).
+3. Copy the PostgreSQL connection URI (with Transaction pooler or Session connection).
+
+### 2. Backend Setup
 
 ```bash
 cd backend
-cp .env.example .env       # then edit DB_PASSWORD, JWT_SECRET, SMTP, Twilio
-npm install
-node scripts/seed.js       # IMPORTANT: regenerates demo password hashes (do this once after schema import)
-npm run dev                # runs on http://localhost:5000
+cp .env.example .env
 ```
 
-> Why `seed.js` is needed: the placeholder bcrypt hash in `schema.sql` is not a real hash. The script rewrites it with a proper bcrypt hash of `password123` for all three demo accounts.
+Configure your `.env` file:
+```env
+PORT=5005
+DATABASE_URL=postgresql://postgres.[YOUR-PROJECT-REF]:[YOUR-PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?sslmode=require
+JWT_SECRET=your_super_secret_jwt_key_here
+CLIENT_URL=http://localhost:5173
 
----
+# Email Notifications (Gmail SMTP / SSL)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=your_email@gmail.com
+SMTP_PASS=your_gmail_app_password
+EMAIL_FROM="Smart Lab Admin <your_email@gmail.com>"
+```
 
-## 3) Frontend setup
+Install dependencies and run database migrations & seeders:
+```bash
+npm install
+
+# Run VTU Curriculum Schema Migrations
+node scripts/migrate_vtu_curriculum.js
+
+# Import Official VTU Lab Programs (2022 & 2025 Schemes)
+npm run seed:labs
+
+# Seed Top Company Placement Questions (Google, Microsoft, EdgeVerve, etc.)
+node scripts/seed_placement_challenges.js
+
+# Verify all automated tests pass (17/17)
+npm run test:curriculum
+
+# Start backend server
+npm run dev
+```
+
+### 3. Frontend Setup
 
 ```bash
-cd frontend
+cd ../frontend
 cp .env.example .env
 npm install
-npm run dev                # runs on http://localhost:5173
+npm run dev
 ```
 
 Open **http://localhost:5173** in your browser.
 
 ---
 
-## Demo credentials
+## 🧪 Automated Test Suite
 
-| Role    | Email             | Password    |
-|---------|-------------------|-------------|
-| HOD     | hod@lab.edu       | password123 |
-| Faculty | faculty@lab.edu   | password123 |
-| Student | student@lab.edu   | password123 |
+The system includes an automated test suite verifying scheme isolation, parameter security, importer idempotency, and semester locking:
 
----
-
-## Feature map
-
-### Student
-- Dashboard with attendance %, charts, announcements
-- Mark attendance (QR scan + camera preview)
-- Book labs, raise complaints, AI chatbot
-
-### Faculty
-- Bulk attendance with present/absent/late
-- Generate session QR codes (15-min expiry)
-- Approve/reject bookings
-- Resolve complaints, post announcements
-
-### HOD (Super Admin)
-- Manage students, faculty, labs, equipment
-- Full analytics: attendance trends, lab utilization, equipment status, complaint resolution, **heatmap**, faculty performance
-- Audit logs (every sensitive action is logged via DB triggers + app middleware)
-
-### Real-time (Socket.io)
-- Booking decisions push to requester
-- New announcements broadcast by role
-- Complaint events notify faculty/HOD
-- Toast notifications with badge count
-
-### Parent notifications
-- When a student's attendance drops below 75%, email + SMS are sent automatically (see `attendanceController.mark`)
-
----
-
-## Integration stubs (production hooks)
-
-| Feature             | Where to plug in                                                | Notes |
-|---------------------|------------------------------------------------------------------|-------|
-| Face recognition    | `POST /api/attendance/camera` (controller stub already accepts student_id, confidence, image_path) | Run face-api.js in the browser **or** a Python OpenCV worker that calls this endpoint |
-| Real AI chatbot     | `backend/src/controllers/chatbotController.js`                   | Replace the intent matcher with OpenAI/Anthropic calls |
-| SMS                 | `backend/src/utils/sms.js`                                       | Twilio creds in `.env` — no-ops gracefully if missing |
-| Email               | `backend/src/utils/mailer.js`                                    | Nodemailer SMTP creds in `.env` |
-
----
-
-## API surface (selected)
-
-```
-POST   /api/auth/login
-POST   /api/auth/register            (HOD only)
-GET    /api/auth/me
-
-GET    /api/students                 (HOD/Faculty)
-POST   /api/students                 (HOD)
-GET    /api/me/attendance            (Student)
-
-POST   /api/attendance/mark          (Faculty)
-POST   /api/attendance/bulk          (Faculty)
-POST   /api/attendance/qr/generate   (Faculty)
-POST   /api/attendance/qr/submit     (Student)
-POST   /api/attendance/camera        (Camera worker)
-
-GET    /api/bookings
-POST   /api/bookings
-PUT    /api/bookings/:id             (Approve/reject)
-
-GET    /api/complaints
-POST   /api/complaints
-PUT    /api/complaints/:id
-
-GET    /api/announcements
-POST   /api/announcements
-
-GET    /api/analytics/overview
-GET    /api/analytics/attendance
-GET    /api/analytics/labs
-GET    /api/analytics/equipment
-GET    /api/analytics/complaints
-GET    /api/analytics/heatmap
-GET    /api/analytics/faculty-perf
-
-GET    /api/audit-logs               (HOD only)
-POST   /api/chatbot
+```bash
+cd backend
+node scripts/runSchemeCurriculumTests.js
 ```
 
-All routes (except `/auth/login`, `/auth/forgot`, `/auth/reset`) require `Authorization: Bearer <jwt>`.
+**Test Coverage:**
+- ✅ **Test 1:** Scheme scoping isolation (2022 students see only 2022; 2025 see only 2025)
+- ✅ **Test 2:** Cross-scheme access prevention (HTTP 403 Forbidden)
+- ✅ **Test 3:** Query-parameter tampering prevention (Students locked to DB semester)
+- ✅ **Test 4:** Importer idempotency (Re-running import preserves exact counts)
+- ✅ **Test 5:** Transactional rollback on malformed CSV rows
+- ✅ **Test 6:** Graceful profile completion prompt for users with no scheme set
+- ✅ **Test 7:** Semester empty states
+- ✅ **Test 8:** Non-runnable program labels & activity subject scoping
 
 ---
 
-## Security
+## 👥 Demo Roles
 
-- JWT (HS256), 7-day expiry, secret in `.env`
-- bcrypt (cost 10) for passwords
-- Role-based middleware (`requireRole('hod','faculty')`)
-- Parameterized queries via `mysql2` — no string concatenation
-- Audit log table + DB triggers for sensitive ops
-- CORS restricted to `CLIENT_URL`
-
----
-
-## Production checklist
-
-- [ ] Strong `JWT_SECRET` (32+ random bytes)
-- [ ] Real SMTP + Twilio credentials
-- [ ] HTTPS reverse proxy (nginx)
-- [ ] Run `npm run build` in `frontend/` and serve `dist/` from Express or a CDN
-- [ ] Set `NODE_ENV=production`
-- [ ] Hook a real face-recognition worker into `/api/attendance/camera`
+| Role | Email | Password | Permissions |
+|---|---|---|---|
+| **HOD** | `hod@lab.edu` | `password123` | Full superadmin access, department analytics, CSV importer, Kahoot quiz host |
+| **Faculty** | `faculty@lab.edu` | `password123` | Attendance QR generator, booking approvals, complaint resolution |
+| **Student (2022 Scheme)** | `student@lab.edu` | `password123` | Current semester lab programs, EdgeVerve/Google/Microsoft placement arena |
 
 ---
 
-## License
+## 🔒 Security Best Practices
 
-Built for academic exhibition purposes. © Team Chinmay Hegde, 2026.
+- Parameterized SQL queries via `pg` (`$1`, `$2`) to eliminate SQL injection risks.
+- Passwords hashed using `bcrypt` (10 salt rounds).
+- JWT authentication with role-based middleware guards on all protected API endpoints.
+- Strict CORS configuration matching `CLIENT_URL`.
+- Atomic transactional rollbacks on curriculum updates and submissions.
+
+---
+
+## 📄 License
+
+Developed for academic lab operations and VTU campus recruitment readiness.  
+© Smart Lab Management System Team.

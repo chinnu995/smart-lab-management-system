@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
+import { DEPARTMENTS, getDeptCode, formatUsnForDept } from '../../utils/deptUtils.js';
 
 export default function Students() {
   const [items, setItems] = useState([]);
   const [show, setShow] = useState(false);
-  const [form, setForm] = useState({ full_name:'', email:'', password:'', phone:'', usn:'', department:'Computer Science', semester:1, section:'A', batch_year:new Date().getFullYear() });
+  const [form, setForm] = useState({ full_name:'', email:'', password:'', phone:'', usn:'', department:'Computer Science & Engineering', semester:1, section:'A', batch_year:new Date().getFullYear() });
   const load = (q='') => api.get('/students', { params: { q } }).then(r => setItems(r.data));
   useEffect(() => { load(); }, []);
   const submit = async (e) => {
@@ -18,6 +19,14 @@ export default function Students() {
     try { await api.delete(`/students/${id}`); toast.success('Deleted'); load(); }
     catch (e) { toast.error(e.response?.data?.message); }
   };
+  const handleDeptChange = (newDept) => {
+    const formattedUsn = form.usn ? formatUsnForDept(form.usn, newDept) : '';
+    setForm({ ...form, department: newDept, usn: formattedUsn });
+  };
+  const handleUsnChange = (val) => {
+    const formatted = formatUsnForDept(val, form.department);
+    setForm({ ...form, usn: formatted || val.toUpperCase() });
+  };
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -27,11 +36,16 @@ export default function Students() {
       {show && (
         <form onSubmit={submit} className="card grid md:grid-cols-3 gap-3">
           <input className="input" placeholder="Full name" required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/>
-          <input className="input uppercase" placeholder="USN (e.g. 4PM22CS001)" required value={form.usn} onChange={e=>setForm({...form, usn:e.target.value.toUpperCase()})}/>
+          <select className="input" required value={form.department} onChange={e=>handleDeptChange(e.target.value)}>
+            <option value="">-- Select Department --</option>
+            {DEPARTMENTS.map(d => (
+              <option key={d.name} value={d.name}>{d.name} ({d.code})</option>
+            ))}
+          </select>
+          <input className="input uppercase font-mono" placeholder={`USN (e.g. 4PM24${getDeptCode(form.department)}011)`} required value={form.usn} onChange={e=>handleUsnChange(e.target.value)}/>
           <input className="input" type="email" placeholder="Email" required value={form.email} onChange={e=>setForm({...form, email:e.target.value})}/>
           <input className="input" type="password" placeholder="Password" required value={form.password} onChange={e=>setForm({...form, password:e.target.value})}/>
           <input className="input" placeholder="Phone" value={form.phone} onChange={e=>setForm({...form, phone:e.target.value})}/>
-          <input className="input" placeholder="Department" value={form.department} onChange={e=>setForm({...form, department:e.target.value})}/>
           <input className="input" type="number" placeholder="Semester" value={form.semester} onChange={e=>setForm({...form, semester:+e.target.value})}/>
           <input className="input" placeholder="Section" value={form.section} onChange={e=>setForm({...form, section:e.target.value})}/>
           <button className="btn-primary md:col-span-3">Save</button>

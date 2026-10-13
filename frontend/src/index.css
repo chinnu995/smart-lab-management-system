@@ -80,4 +80,47 @@ button:not(:disabled):active,
   left: 140%;
 }
 
+/* ==========================================================================
+   Start Session Animated Button Effects
+   ========================================================================== */
+@keyframes startBtnGlow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(124, 58, 237, 0.45), 0 0 25px rgba(79, 70, 229, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(124, 58, 237, 0.8), 0 0 45px rgba(79, 70, 229, 0.55);
+  }
+}
+
+@keyframes startBtnShimmer {
+  0% {
+    transform: translateX(-150%) skewX(-20deg);
+  }
+  20%, 100% {
+    transform: translateX(250%) skewX(-20deg);
+  }
+}
+
+@keyframes startBtnGradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-start-btn {
+  background-size: 220% 220% !important;
+  animation: startBtnGradient 4s ease infinite, startBtnGlow 2.5s ease-in-out infinite !important;
+}
+
+.animate-btn-shimmer-sweep {
+  animation: startBtnShimmer 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
 body { @apply bg-[#e0f2fe] dark:bg-slate-900 text-slate-800 dark:text-slate-100 antialiased; }
+

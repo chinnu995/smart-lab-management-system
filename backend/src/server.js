@@ -4,6 +4,7 @@ const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const { verifyEmailConfig } = require('./services/emailService');
 
 if (!process.env.JWT_SECRET) {
   console.warn('WARNING: JWT_SECRET is not set in .env. Login may still work in development, but set JWT_SECRET for production.');
@@ -52,7 +53,10 @@ const PORT = parseInt(process.env.PORT, 10) || 5000;
 
 function startServer(port) {
   server.listen(port, '0.0.0.0')
-    .once('listening', () => console.log(`🚀 Smart Lab API running on 0.0.0.0:${port}`))
+    .once('listening', () => {
+      console.log(`🚀 Smart Lab API running on 0.0.0.0:${port}`);
+      verifyEmailConfig();
+    })
     .once('error', (err) => {
       if (err.code === 'EADDRINUSE') {
         console.warn(`Port ${port} already in use. Trying ${port + 1}...`);

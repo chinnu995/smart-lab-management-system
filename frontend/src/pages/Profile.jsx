@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import toast from 'react-hot-toast';
-import { User, Phone, Mail, GraduationCap, ShieldCheck, Key, Edit3, Save, X, CheckCircle2, Lock, Building, Calendar, Sparkles, Camera } from 'lucide-react';
+import { User, Phone, Mail, GraduationCap, ShieldCheck, Key, Edit3, Save, X, CheckCircle2, Lock, Building, Calendar, Sparkles, Camera, BookOpen } from 'lucide-react';
+import { DEPARTMENTS } from '../utils/deptUtils.js';
 
 const getImageUrl = (filePath) => {
   if (!filePath) return null;
@@ -35,6 +36,7 @@ export default function Profile() {
   const [department, setDepartment] = useState('Computer Science & Engineering');
   const [academicYear, setAcademicYear] = useState('1st Year');
   const [semester, setSemester] = useState('1');
+  const [scheme, setScheme] = useState('');
   const [profileImage, setProfileImage] = useState(null);
   
   // Password change fields
@@ -53,6 +55,7 @@ export default function Profile() {
         setPhone(data.phone || '');
         setDepartment(data.department || user?.department || 'Computer Science & Engineering');
         setProfileImage(data.profile_image || user?.profile_image || null);
+        setScheme(data.scheme || user?.scheme || '');
         
         // Map semester to academic year
         const sem = data.semester ? parseInt(data.semester) : 1;
@@ -189,7 +192,8 @@ export default function Profile() {
         department: department.trim(),
         ...(user?.role === 'student' && {
           academic_year: academicYear,
-          semester: semester
+          semester: semester,
+          scheme: scheme
         }),
         ...(changePassword && {
           current_password: currentPassword,
@@ -208,7 +212,8 @@ export default function Profile() {
         phone: data.user.phone || phone,
         department: data.user.department || department,
         profile_image: data.user.profile_image || profileImage,
-        semester: data.user.semester || semester
+        semester: data.user.semester || semester,
+        scheme: data.user.scheme || scheme
       };
       setUser(updatedUser);
       localStorage.setItem('user', JSON.stringify(updatedUser));
@@ -433,12 +438,9 @@ export default function Profile() {
                     onChange={(e) => setDepartment(e.target.value)}
                     className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-primary focus:outline-none transition-all"
                   >
-                    <option value="Computer Science & Engineering">Computer Science & Engineering</option>
-                    <option value="Information Science & Engineering">Information Science & Engineering</option>
-                    <option value="Computer Engineering">Computer Engineering</option>
-                    <option value="Artificial Intelligence & Machine Learning">Artificial Intelligence & Machine Learning</option>
-                    <option value="Computer Science & Design">Computer Science & Design</option>
-                    <option value="Computer Science & Data Science">Computer Science & Data Science</option>
+                    {DEPARTMENTS.map(d => (
+                      <option key={d.name} value={d.name}>{d.name} ({d.code})</option>
+                    ))}
                   </select>
                 </div>
               ) : (
@@ -471,6 +473,33 @@ export default function Profile() {
                 ) : (
                   <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 text-slate-800 dark:text-slate-200 text-sm font-medium">
                     <Calendar size={18} className="text-slate-400" /> {academicYear} (Semester {semester})
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* VTU Scheme (ONLY for Student role) */}
+            {user?.role === 'student' && (
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">
+                  VTU Syllabus Scheme
+                </label>
+                {isEditing ? (
+                  <div className="relative">
+                    <BookOpen size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <select
+                      value={scheme || '2022 Scheme'}
+                      onChange={(e) => setScheme(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-primary focus:outline-none transition-all"
+                    >
+                      <option value="2022 Scheme">2022 Scheme (VTU CBCS)</option>
+                      <option value="2021 Scheme">2021 Scheme (VTU CBCS)</option>
+                      <option value="2025 Scheme">2025 Scheme (VTU NEP/CBCS)</option>
+                    </select>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 text-slate-800 dark:text-slate-200 text-sm font-medium">
+                    <BookOpen size={18} className="text-slate-400" /> {scheme || 'Not selected'}
                   </div>
                 )}
               </div>

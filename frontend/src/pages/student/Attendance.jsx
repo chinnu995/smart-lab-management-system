@@ -767,7 +767,11 @@ export default function StudentAttendance() {
           </h3>
 
           {(() => {
+            const activeSessionObj = activeQRSessions.find(s => Number(s.lab_id) === Number(selectedLab)) || activeQRSessions[0];
             const activeLabObj = labs.find(l => Number(l.lab_id) === Number(selectedLab)) || labs[0];
+            const displaySubject = activeSessionObj?.subject || activeSessionObj?.lab_name || activeLabObj?.lab_name || 'Selected Lab';
+            const displayLocation = activeSessionObj?.location || activeLabObj?.location || '2F 01';
+
             return (
               <div className="mb-4 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded-lg p-3 space-y-2">
                 <div className="flex items-center justify-between">
@@ -797,13 +801,13 @@ export default function StudentAttendance() {
                         }`}
                       >
                         <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
-                        {s.lab_name} ({s.location || '2F 01'})
+                        {s.subject || s.lab_name} ({s.location || '2F 01'})
                       </button>
                     ))}
                   </div>
                 ) : (
                   <h4 className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                    {activeLabObj ? `${activeLabObj.lab_name} (${activeLabObj.location || '2F 01'})` : 'Loading active session...'}
+                    {displaySubject} ({displayLocation})
                   </h4>
                 )}
               </div>

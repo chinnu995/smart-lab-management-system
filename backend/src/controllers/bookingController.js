@@ -44,7 +44,7 @@ exports.decide = async (req, res) => {
       type: 'booking', title: `Booking ${status}`, message: `Your booking #${req.params.id} was ${status}.`
     });
     if (status === 'approved') {
-      await db.execute('UPDATE labs SET status="occupied" WHERE lab_id=?', [lab_id]);
+      await db.execute("UPDATE labs SET status='occupied' WHERE lab_id=?", [lab_id]);
       io.to('role:hod').to('role:faculty').emit('lab:status_changed', { lab_id, status: 'occupied' });
     }
   }
@@ -54,7 +54,7 @@ exports.decide = async (req, res) => {
 };
 
 exports.cancel = async (req, res) => {
-  await db.execute('UPDATE bookings SET status="cancelled" WHERE booking_id=? AND requested_by=?',
+  await db.execute("UPDATE bookings SET status='cancelled' WHERE booking_id=? AND requested_by=?",
     [req.params.id, req.user.id]);
   res.json({ message: 'Cancelled' });
 };

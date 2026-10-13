@@ -236,7 +236,7 @@ export default function KahootLobby() {
                     <option value="Operating Systems Lab">Operating Systems Lab</option>
                     <option value="AI & Machine Learning Lab">AI & Machine Learning Lab</option>
                     <option value="C Programming Lab">C Programming Lab</option>
-                    <option value="Web Technologies Lab">Web Technologies Lab</option>
+                    <option value="MongoDB Lab">MongoDB Lab</option>
                     <option value="Computer Networks Lab">Computer Networks Lab</option>
                   </select>
 

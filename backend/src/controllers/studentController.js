@@ -7,7 +7,7 @@ exports.list = async (req, res) => {
   const [rows] = await db.execute(
     `SELECT s.student_id, s.usn, u.full_name, u.email, u.phone, s.department, s.semester, s.section, s.scheme
        FROM students s JOIN users u ON u.user_id = s.user_id
-       WHERE u.full_name LIKE ? OR s.usn LIKE ? OR u.email LIKE ?
+       WHERE u.full_name ILIKE ? OR s.usn ILIKE ? OR u.email ILIKE ?
        ORDER BY s.student_id DESC`, [search, search, search]
   );
   res.json(rows);
@@ -82,12 +82,12 @@ exports.attendanceSummary = async (req, res) => {
     if (m.length) usn = m[0].usn;
   }
   const [rows] = await db.execute(
-    `SELECT l.lab_name,
+    `SELECT COALESCE(NULLIF(TRIM(a.subject), ''), l.lab_name) AS lab_name,
             COUNT(*) AS total,
             SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) AS present,
             ROUND(SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END)*100.0/NULLIF(COUNT(*),0),2) AS percentage
-       FROM attendance a JOIN labs l ON l.lab_id=a.lab_id
-      WHERE a.student_id=? GROUP BY l.lab_id, l.lab_name`, [studentId]
+       FROM attendance a LEFT JOIN labs l ON l.lab_id=a.lab_id
+      WHERE a.student_id=? GROUP BY COALESCE(NULLIF(TRIM(a.subject), ''), l.lab_name)`, [studentId]
   );
   const [overall] = await db.execute(
     `SELECT ROUND(SUM(CASE WHEN status='present' THEN 1 ELSE 0 END)*100.0/NULLIF(COUNT(*),0),2) AS overall
@@ -110,10 +110,12 @@ exports.studentStatus = async (req, res) => {
 
     // 2. Attendance stats
     const [attendanceRows] = await db.execute(
-      `SELECT l.lab_name, COUNT(*) AS total, SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) AS present,
+      `SELECT COALESCE(NULLIF(TRIM(a.subject), ''), l.lab_name) AS lab_name,
+              COUNT(*) AS total,
+              SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) AS present,
               ROUND(SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END)*100.0/NULLIF(COUNT(*),0),2) AS percentage
-       FROM attendance a JOIN labs l ON l.lab_id=a.lab_id
-       WHERE a.student_id=? GROUP BY l.lab_id, l.lab_name`, [studentId]
+       FROM attendance a LEFT JOIN labs l ON l.lab_id=a.lab_id
+       WHERE a.student_id=? GROUP BY COALESCE(NULLIF(TRIM(a.subject), ''), l.lab_name)`, [studentId]
     );
     const [overallRows] = await db.execute(
       `SELECT ROUND(SUM(CASE WHEN status='present' THEN 1 ELSE 0 END)*100.0/NULLIF(COUNT(*),0),2) AS overall

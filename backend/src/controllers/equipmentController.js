@@ -53,7 +53,7 @@ exports.issue = async (req, res) => {
      VALUES (?,?,?,NOW(),?, 'issued')`,
     [equipment_id, student_id, req.user.faculty_id || null, expected_return || null]
   );
-  await db.execute('UPDATE equipment SET status="in_use" WHERE equipment_id=?', [equipment_id]);
+  await db.execute("UPDATE equipment SET status='in_use' WHERE equipment_id=?", [equipment_id]);
   audit.log(req.user.id, 'ISSUE_EQUIPMENT', 'equipment_requests', r.insertId, `Issued to student ${student_id}`, req.ip);
   notifyEquipmentChange(req);
   res.status(201).json({ request_id: r.insertId });
@@ -63,8 +63,8 @@ exports.returnItem = async (req, res) => {
   const id = req.params.id;
   const [rows] = await db.execute('SELECT equipment_id FROM equipment_requests WHERE request_id=?', [id]);
   if (!rows.length) return res.status(404).json({ message: 'Not found' });
-  await db.execute('UPDATE equipment_requests SET return_date=NOW(), status="returned" WHERE request_id=?', [id]);
-  await db.execute('UPDATE equipment SET status="available" WHERE equipment_id=?', [rows[0].equipment_id]);
+  await db.execute("UPDATE equipment_requests SET return_date=NOW(), status='returned' WHERE request_id=?", [id]);
+  await db.execute("UPDATE equipment SET status='available' WHERE equipment_id=?", [rows[0].equipment_id]);
   notifyEquipmentChange(req);
   res.json({ message: 'Returned' });
 };

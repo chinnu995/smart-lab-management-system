@@ -36,6 +36,7 @@ import TakeCodingTest from './pages/student/TakeCodingTest.jsx';
 import StudentCodingTests from './pages/student/StudentCodingTests.jsx';
 import PracticeSkills from './pages/student/PracticeSkills.jsx';
 import ProblemList from './pages/student/ProblemList.jsx';
+import SubjectPrograms from './pages/student/SubjectPrograms.jsx';
 import HackerRankIDE from './pages/student/HackerRankIDE.jsx';
 import CodingResults from './pages/hod/CodingResults.jsx';
 import StudentVerification from './pages/hod/StudentVerification.jsx';
@@ -87,9 +88,10 @@ export default function App() {
         <Route path="student/attendance" element={<Private roles={['student']}><StudentAttendance/></Private>} />
         <Route path="student/lab-manuals" element={<Private roles={['student']}><StudentLabManuals/></Private>} />
         <Route path="student/complaints" element={<Private roles={['student']}><StudentComplaints/></Private>} />
-        <Route path="student/coding" element={<Private roles={['student']}><PracticeSkills/></Private>} />
-        <Route path="student/coding/category/:category" element={<Private roles={['student']}><ProblemList/></Private>} />
-        <Route path="student/coding/problem/:id" element={<Private roles={['student']}><HackerRankIDE/></Private>} />
+        <Route path="student/coding" element={<Private roles={['student', 'faculty', 'hod']}><PracticeSkills/></Private>} />
+        <Route path="student/coding/subject/:id" element={<Private roles={['student', 'faculty', 'hod']}><SubjectPrograms/></Private>} />
+        <Route path="student/coding/category/:category" element={<Private roles={['student', 'faculty', 'hod']}><ProblemList/></Private>} />
+        <Route path="student/coding/problem/:id" element={<Private roles={['student', 'faculty', 'hod']}><HackerRankIDE/></Private>} />
         <Route path="student/tests" element={<Private roles={['student']}><StudentTests/></Private>} />
         <Route path="student/coding-tests" element={<Private roles={['student']}><StudentCodingTests/></Private>} />
         <Route path="student/test/:testId" element={<Private roles={['student']}><TakeTest/></Private>} />

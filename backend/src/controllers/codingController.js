@@ -302,7 +302,46 @@ exports.getProblems = async (req, res) => {
 
     const [rows] = await db.query(query, params);
     
-    const problems = (rows || []).map(r => {
+    // Also fetch from lab_programs if filtering by category or all
+    let labProgramRows = [];
+    try {
+      let lpQuery = `
+        SELECT lp.id as problem_id, lp.title, ('program-' || lp.id) as slug, 'Medium' as difficulty,
+               s.name as category, lp.program_no as week_number, lp.created_at,
+               (SELECT status FROM coding_submissions cs WHERE cs.problem_id = lp.id AND cs.student_id = ?) AS user_status,
+               (SELECT COUNT(*) FROM coding_submissions cs WHERE cs.problem_id = lp.id) AS total_submissions,
+               (SELECT COUNT(*) FROM coding_submissions cs WHERE cs.problem_id = lp.id AND cs.status = 'Accepted') AS accepted_submissions
+        FROM lab_programs lp
+        JOIN subjects s ON lp.subject_id = s.id
+        WHERE 1=1
+      `;
+      const lpParams = [studentId];
+
+      if (req.query.subject_id) {
+        lpQuery += ` AND s.id = ?`;
+        lpParams.push(req.query.subject_id);
+      } else if (category && category !== 'all') {
+        if (!isNaN(category)) {
+          lpQuery += ` AND s.id = ?`;
+          lpParams.push(category);
+        } else {
+          lpQuery += ` AND (LOWER(s.name) LIKE ? OR LOWER(s.code) = ?)`;
+          lpParams.push(`%${category.toLowerCase()}%`, category.toLowerCase());
+        }
+      }
+
+      lpQuery += ` ORDER BY lp.program_no ASC`;
+      const [lpRes] = await db.query(lpQuery, lpParams);
+      labProgramRows = lpRes || [];
+    } catch (e) {
+      console.error('Error fetching lab_programs in getProblems:', e);
+    }
+
+    const allRows = labProgramRows.length > 0 && category && category !== 'all' && (!rows || rows.length === 0)
+      ? labProgramRows
+      : [...(rows || []), ...labProgramRows];
+
+    const problems = allRows.map(r => {
       const total = parseInt(r.total_submissions) || 0;
       const accepted = parseInt(r.accepted_submissions) || 0;
       const accuracy = total > 0 ? Math.round((accepted / total) * 100) : 100;
@@ -314,7 +353,7 @@ exports.getProblems = async (req, res) => {
         solved: r.user_status === 'Accepted',
         isLocked: false,
         weekNumber: weekNum,
-        unlockStatus: `Unlocked • Week ${weekNum}`
+        unlockStatus: `Unlocked • Program ${weekNum}`
       };
     });
 
@@ -359,9 +398,49 @@ exports.getProblemDetails = async (req, res) => {
       : 'SELECT * FROM coding_challenges WHERE slug = ?';
     
     const [rows] = await db.query(query, [id]);
-    if (!rows.length) return res.status(404).json({ error: 'Problem not found' });
+    let problem = rows[0];
 
-    const problem = rows[0];
+    if (!problem) {
+      let pRows = [];
+      if (isNum) {
+        const [resP] = await db.query(`
+          SELECT lp.*, s.name as subject_name
+          FROM lab_programs lp
+          JOIN subjects s ON lp.subject_id = s.id
+          WHERE lp.id = ?
+        `, [id]);
+        pRows = resP;
+      } else if (String(id).startsWith('program-')) {
+        const progId = parseInt(String(id).replace('program-', ''));
+        const [resP] = await db.query(`
+          SELECT lp.*, s.name as subject_name
+          FROM lab_programs lp
+          JOIN subjects s ON lp.subject_id = s.id
+          WHERE lp.id = ?
+        `, [progId]);
+        pRows = resP;
+      }
+
+      if (pRows && pRows.length) {
+        const lp = pRows[0];
+        problem = {
+          problem_id: lp.id,
+          title: lp.title,
+          slug: `program-${lp.id}`,
+          difficulty: 'Medium',
+          category: lp.subject_name,
+          week_number: lp.program_no,
+          description: lp.description,
+          input_format: 'Standard Input (STDIN)',
+          output_format: 'Standard Output (STDOUT)',
+          constraints: 'Execution Time < 5s',
+          sample_cases: lp.test_cases,
+          starter_code: lp.starter_code
+        };
+      }
+    }
+
+    if (!problem) return res.status(404).json({ error: 'Problem not found' });
     const weekNum = problem.week_number || 1;
     
     // Check if student has already submitted this coding challenge
@@ -765,4 +844,415 @@ exports.getPlacementPatterns = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch placement patterns' });
   }
 };
+
+// =====================================================================
+// SCHEME-AWARE CURRICULUM & SUBJECT ENDPOINTS
+// =====================================================================
+
+// GET /api/coding/schemes
+exports.getSchemes = async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT id, name, year_label FROM schemes ORDER BY id ASC');
+    res.json(rows || []);
+  } catch (err) {
+    console.error('Error fetching schemes:', err);
+    res.status(500).json({ error: 'Failed to fetch schemes' });
+  }
+};
+
+// GET /api/coding/subjects?semester=N&include=activity
+// - Students: scheme/dept/semester always come from DB (never trusted from query params)
+// - Faculty/HOD: accept ?scheme= ?dept= ?semester= filters
+exports.getSubjects = async (req, res) => {
+  try {
+    const userId   = req.user?.id;
+    const userRole = req.user?.role || 'student';
+
+    if (userRole === 'student') {
+      // ── Always read credentials from DB ──────────────────────────────────
+      const [sRows] = await db.query(
+        'SELECT student_id, usn, department, semester, scheme FROM students WHERE user_id = ?',
+        [userId]
+      );
+      if (!sRows || !sRows.length) {
+        return res.status(404).json({ error: 'Student record not found' });
+      }
+
+      const student    = sRows[0];
+      const studentDept = (student.department || '').trim();
+      const studentSem  = parseInt(student.semester) || 1;
+      const studentScheme = (student.scheme || '').trim();
+
+      // Handle no scheme set — return prompt
+      if (!studentScheme) {
+        const [allSchemes] = await db.query('SELECT id, name FROM schemes WHERE name IN (\'2022\',\'2025\') ORDER BY name ASC');
+        return res.json({
+          missing_scheme: true,
+          studentInfo: { usn: student.usn, department: studentDept, semester: studentSem },
+          schemes: allSchemes || [],
+          subjects: []
+        });
+      }
+
+      // Check if student has explicit scheme_id in users
+      let schemeId = null;
+      let schemeName = null;
+      const [uRows] = await db.query('SELECT scheme_id FROM users WHERE user_id = ?', [userId]);
+      if (uRows && uRows[0] && uRows[0].scheme_id) {
+        const [schRow] = await db.query('SELECT id, name FROM schemes WHERE id = ?', [uRows[0].scheme_id]);
+        if (schRow && schRow[0]) {
+          schemeId = schRow[0].id;
+          schemeName = schRow[0].name;
+        }
+      }
+
+      // If not resolved from users.scheme_id, resolve canonical scheme id from students.scheme
+      if (!schemeId) {
+        const schemeYear = studentScheme.replace(/\D/g, '');
+        const [schRows] = await db.query(
+          `SELECT id, name FROM schemes WHERE name = ? OR name LIKE ? ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, id DESC LIMIT 1`,
+          [schemeYear, `${schemeYear}%`, schemeYear]
+        );
+        if (schRows && schRows.length) {
+          schemeId = schRows[0].id;
+          schemeName = schRows[0].name;
+        }
+      }
+
+      if (!schemeId) {
+        return res.json({
+          missing_scheme: false,
+          studentInfo: { scheme: studentScheme, department: studentDept, semester: studentSem },
+          subjects: []
+        });
+      }
+
+      // Validate semester param — students may only query <= their semester
+      let querySem = studentSem;
+      if (req.query.semester) {
+        const requested = parseInt(req.query.semester);
+        if (!isNaN(requested) && requested >= 1 && requested <= studentSem) {
+          querySem = requested;
+        }
+      }
+
+      const includeActivity = req.query.include === 'activity';
+
+      // Fetch subjects, including elective chosen status
+      const [subjects] = await db.query(`
+        SELECT
+          s.id, s.code, s.name, s.type, s.semester, s.dept,
+          sch.name AS scheme_name,
+          COUNT(lp.id)::int AS program_count,
+          CASE WHEN ss.subject_id IS NOT NULL THEN true ELSE false END AS chosen
+        FROM subjects s
+        JOIN schemes sch ON sch.id = s.scheme_id
+        LEFT JOIN lab_programs lp ON lp.subject_id = s.id
+        LEFT JOIN student_subjects ss ON ss.subject_id = s.id AND ss.student_id = ?
+        WHERE s.scheme_id = ?
+          AND LOWER(s.dept) = LOWER(?)
+          AND s.semester = ?
+          AND s.type IN ('lab','elective'${includeActivity ? ",'activity'" : ''})
+        GROUP BY s.id, s.code, s.name, s.type, s.semester, s.dept, sch.name, ss.subject_id
+        ORDER BY s.semester ASC, s.type ASC, s.code ASC
+      `, [student.student_id, schemeId, studentDept, querySem]);
+
+      return res.json({
+        missing_scheme: false,
+        studentInfo: { scheme: schemeName, department: studentDept, semester: studentSem, usn: student.usn },
+        subjects: subjects || []
+      });
+    }
+
+    // ── Faculty & HOD: filter dropdowns allowed ──────────────────────────
+    const { scheme, dept, semester } = req.query;
+    const includeActivity = req.query.include === 'activity';
+
+    let query = `
+      SELECT
+        s.id, s.code, s.name, s.type, s.semester, s.dept,
+        sch.name AS scheme_name,
+        COUNT(lp.id)::int AS program_count
+      FROM subjects s
+      JOIN schemes sch ON sch.id = s.scheme_id
+      LEFT JOIN lab_programs lp ON lp.subject_id = s.id
+      WHERE 1=1
+        AND s.type IN ('lab','elective'${includeActivity ? ",'activity'" : ''})
+    `;
+    const params = [];
+
+    if (scheme && scheme !== 'all') {
+      const yr = scheme.replace(/\D/g, '');
+      query += ` AND (sch.name = ? OR sch.name LIKE ?)`;
+      params.push(yr, `${yr}%`);
+    }
+    if (dept && dept !== 'all') {
+      query += ` AND LOWER(s.dept) = LOWER(?)`;
+      params.push(dept);
+    }
+    if (semester && semester !== 'all') {
+      query += ` AND s.semester = ?`;
+      params.push(parseInt(semester));
+    }
+
+    query += `
+      GROUP BY s.id, s.code, s.name, s.type, s.semester, s.dept, sch.name
+      ORDER BY sch.name ASC, s.semester ASC, s.type ASC, s.code ASC
+    `;
+
+    const [subjects] = await db.query(query, params);
+    const [allSchemes] = await db.query(`SELECT id, name FROM schemes WHERE name IN ('2022','2025') ORDER BY name ASC`);
+
+    return res.json({ schemes: allSchemes || [], subjects: subjects || [] });
+  } catch (err) {
+    console.error('Error fetching scheme-aware subjects:', err);
+    res.status(500).json({ error: 'Failed to fetch subjects' });
+  }
+};
+
+
+// GET /api/coding/subjects/:subjectId/programs
+// 403 if the subject is outside the student's scheme and dept.
+// Return program_no, title, description, source, runnable, language.
+// NEVER return test_cases to students.
+exports.getSubjectPrograms = async (req, res) => {
+  try {
+    const subjectId = req.params.subjectId || req.params.id;
+    const userId = req.user?.id;
+    const userRole = req.user?.role || 'student';
+
+    // Fetch subject and scheme
+    const [subRows] = await db.query(`
+      SELECT s.id, s.code, s.name, s.type, s.semester, s.dept, sch.name AS scheme_name
+      FROM subjects s
+      JOIN schemes sch ON s.scheme_id = sch.id
+      WHERE s.id = ?
+    `, [subjectId]);
+
+    if (!subRows || !subRows.length) {
+      return res.status(404).json({ error: 'Subject not found' });
+    }
+
+    const subject = subRows[0];
+
+    // Student scope enforcement
+    if (userRole === 'student') {
+      const [sRows] = await db.query(
+        'SELECT student_id, scheme, department, semester FROM students WHERE user_id = ?',
+        [userId]
+      );
+      if (!sRows || !sRows.length) {
+        return res.status(404).json({ error: 'Student record not found' });
+      }
+
+      const student = sRows[0];
+      const studentScheme = (student.scheme || '').replace(/\D/g, '');
+      const subjectScheme = (subject.scheme_name || '').replace(/\D/g, '');
+      const studentDept = (student.department || '').trim().toLowerCase();
+      const subjectDept = (subject.dept || '').trim().toLowerCase();
+
+      // 403 if outside student's scheme or dept
+      if (studentScheme !== subjectScheme || (studentDept && subjectDept && studentDept !== subjectDept)) {
+        return res.status(403).json({
+          error: 'Access forbidden: this subject is outside your VTU scheme or department'
+        });
+      }
+    }
+
+    // Return program_no, title, description, source, runnable, language (NO test_cases)
+    const [programs] = await db.query(`
+      SELECT program_no, title, description, source, runnable, language
+      FROM lab_programs
+      WHERE subject_id = ?
+      ORDER BY program_no ASC
+    `, [subjectId]);
+
+    res.json({
+      subject,
+      programs: programs || []
+    });
+  } catch (err) {
+    console.error('Error fetching subject programs:', err);
+    res.status(500).json({ error: 'Failed to fetch subject programs' });
+  }
+};
+
+// POST /api/coding/electives/:subjectId
+// Choose an elective subject
+exports.chooseElective = async (req, res) => {
+  try {
+    const subjectId = req.params.subjectId;
+    const userId = req.user?.id;
+
+    const [sRows] = await db.query(
+      'SELECT student_id, scheme, department, semester FROM students WHERE user_id = ?',
+      [userId]
+    );
+    if (!sRows || !sRows.length) {
+      return res.status(404).json({ error: 'Student profile not found' });
+    }
+    const student = sRows[0];
+
+    // Verify subject exists, is an elective, and belongs to student's scheme and dept
+    const [subRows] = await db.query(`
+      SELECT s.*, sch.name AS scheme_name
+      FROM subjects s
+      JOIN schemes sch ON s.scheme_id = sch.id
+      WHERE s.id = ?
+    `, [subjectId]);
+
+    if (!subRows || !subRows.length) {
+      return res.status(404).json({ error: 'Subject not found' });
+    }
+    const subject = subRows[0];
+
+    if (subject.type !== 'elective') {
+      return res.status(400).json({ error: 'Subject is not an elective' });
+    }
+
+    const studentScheme = (student.scheme || '').replace(/\D/g, '');
+    const subjectScheme = (subject.scheme_name || '').replace(/\D/g, '');
+    const studentDept = (student.department || '').trim().toLowerCase();
+    const subjectDept = (subject.dept || '').trim().toLowerCase();
+
+    if (studentScheme !== subjectScheme || (studentDept && subjectDept && studentDept !== subjectDept)) {
+      return res.status(403).json({ error: 'Forbidden: elective is outside your scheme or department' });
+    }
+
+    if (subject.semester > (student.semester || 1)) {
+      return res.status(403).json({ error: 'Forbidden: elective is for a higher semester' });
+    }
+
+    await db.query(`
+      INSERT INTO student_subjects (student_id, subject_id)
+      VALUES (?, ?)
+      ON CONFLICT (student_id, subject_id) DO NOTHING
+    `, [student.student_id, subjectId]);
+
+    res.json({ success: true, message: 'Elective chosen successfully' });
+  } catch (err) {
+    console.error('Error choosing elective:', err);
+    res.status(500).json({ error: 'Failed to choose elective' });
+  }
+};
+
+// DELETE /api/coding/electives/:subjectId
+// Drop a chosen elective subject
+exports.dropElective = async (req, res) => {
+  try {
+    const subjectId = req.params.subjectId;
+    const userId = req.user?.id;
+
+    const [sRows] = await db.query(
+      'SELECT student_id, scheme, department, semester FROM students WHERE user_id = ?',
+      [userId]
+    );
+    if (!sRows || !sRows.length) {
+      return res.status(404).json({ error: 'Student profile not found' });
+    }
+    const student = sRows[0];
+
+    await db.query(`
+      DELETE FROM student_subjects
+      WHERE student_id = ? AND subject_id = ?
+    `, [student.student_id, subjectId]);
+
+    res.json({ success: true, message: 'Elective dropped successfully' });
+  } catch (err) {
+    console.error('Error dropping elective:', err);
+    res.status(500).json({ error: 'Failed to drop elective' });
+  }
+};
+
+// POST /api/coding/curriculum/preview (HOD only)
+// Validate CSV content and return preview
+exports.previewCurriculumCsv = async (req, res) => {
+  try {
+    const { previewCsvContent } = require('../utils/csvLabImporter');
+    let csvData = '';
+    if (req.file) {
+      csvData = req.file.buffer.toString('utf-8');
+    } else if (req.body && req.body.csv_content) {
+      csvData = req.body.csv_content;
+    } else {
+      return res.status(400).json({ error: 'Please upload a CSV file or provide csv_content' });
+    }
+
+    const preview = previewCsvContent(csvData);
+    res.json(preview);
+  } catch (err) {
+    console.error('Error previewing curriculum CSV:', err);
+    res.status(500).json({ error: err.message || 'Failed to preview CSV' });
+  }
+};
+
+// POST /api/coding/curriculum/import (HOD only)
+// Import CSV after confirmation
+exports.importCurriculum = async (req, res) => {
+  try {
+    const { parseCsvString, validateRow, executeImport } = require('../utils/csvLabImporter');
+    let csvData = '';
+    if (req.file) {
+      csvData = req.file.buffer.toString('utf-8');
+    } else if (req.body && req.body.csv_content) {
+      csvData = req.body.csv_content;
+    } else {
+      return res.status(400).json({ error: 'Please upload a CSV file or provide csv_content' });
+    }
+
+    const { headers, rows } = parseCsvString(csvData);
+    const REQUIRED_COLS = ['scheme', 'dept', 'semester', 'subject_code', 'subject_name', 'subject_type', 'program_no', 'title', 'description', 'source_pdf'];
+    const missingCols = REQUIRED_COLS.filter(c => !headers.includes(c));
+    if (missingCols.length > 0) {
+      return res.status(400).json({ error: `Missing columns: ${missingCols.join(', ')}` });
+    }
+
+    const validRows = [];
+    const rejected = [];
+    for (let i = 0; i < rows.length; i++) {
+      const errs = validateRow(rows[i], i + 2);
+      if (errs.length > 0) {
+        rejected.push({ line: i + 2, errors: errs });
+      } else {
+        validRows.push(rows[i]);
+      }
+    }
+
+    if (rejected.length > 0) {
+      return res.status(400).json({
+        error: 'Validation failed. Whole import rolled back.',
+        rejectedCount: rejected.length,
+        rejected
+      });
+    }
+
+    const result = await executeImport(validRows, 'HOD CSV Admin Upload', req.user?.id || 0, req.ip);
+    res.json({
+      message: 'Curriculum imported successfully',
+      summary: result.summary
+    });
+  } catch (err) {
+    console.error('Error importing curriculum:', err);
+    res.status(500).json({ error: err.message || 'Failed to import curriculum' });
+  }
+};
+
+// GET /api/coding/dept-map
+// Returns USN code to department mappings (e.g. CS -> CSE)
+exports.getDeptMap = async (req, res) => {
+  try {
+    const [rows] = await db.query('SELECT usn_code, dept FROM dept_map');
+    const map = {};
+    (rows || []).forEach(r => {
+      map[r.usn_code.toUpperCase()] = r.dept;
+    });
+    res.json(map);
+  } catch (err) {
+    console.error('Error fetching dept map:', err);
+    res.status(500).json({ error: 'Failed to fetch dept map' });
+  }
+};
+
+
+
 

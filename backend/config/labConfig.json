@@ -1,0 +1,24 @@
+{
+  "_comment": "Edit this file to control which subjects are non-runnable in the IDE and their default editor language.",
+
+  "nonRunnable": [
+    "BCS302",
+    "1BCS303",
+    "BICL504",
+    "BCS601",
+    "BCSL657D",
+    "BAIL657C",
+    "BIS657A",
+    "BCS358C",
+    "1BCSL307A",
+    "BCSL657B"
+  ],
+
+  "defaultLanguage": {
+    "BCSL305":  "c",
+    "BCS306A":  "java",
+    "BCS306B":  "cpp",
+    "BCS358D":  "python",
+    "BCSL606":  "python"
+  }
+}

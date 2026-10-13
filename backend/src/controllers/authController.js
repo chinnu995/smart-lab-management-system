@@ -3,7 +3,8 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const db = require('../config/db');
 const audit = require('../utils/audit');
-const { sendMail } = require('../utils/mailer');
+const { sendMail } = require('../services/emailService');
+const { normalizeAndValidateEmail, generateSecureOtp, hashOtp, verifyOtpHash } = require('../utils/otpHelper');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'smart_lab_dev_secret';
 const JWT_EXPIRES = process.env.JWT_EXPIRES || '7d';
@@ -41,12 +42,14 @@ exports.login = async (req, res) => {
   let faculty_id = null;
   let subject = null;
   let scheme = null;
+  let semester = null;
   if (user.role === 'student') {
-    const [stdRows] = await db.execute('SELECT student_id, usn, department, scheme FROM students WHERE user_id=?', [user.user_id]);
+    const [stdRows] = await db.execute('SELECT student_id, usn, department, semester, scheme FROM students WHERE user_id=?', [user.user_id]);
     if (stdRows.length) {
       student_id = stdRows[0].student_id;
       usn = stdRows[0].usn;
       department = stdRows[0].department;
+      semester = stdRows[0].semester;
       scheme = stdRows[0].scheme;
     }
   } else if (user.role === 'faculty') {
@@ -63,7 +66,7 @@ exports.login = async (req, res) => {
   }
 
   const token = jwt.sign(
-    { id: user.user_id, role: user.role, name: user.full_name, email: user.email, student_id, faculty_id, subject, scheme },
+    { id: user.user_id, role: user.role, name: user.full_name, email: user.email, student_id, faculty_id, subject, scheme, semester },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES }
   );
@@ -72,7 +75,7 @@ exports.login = async (req, res) => {
 
   res.json({
     token,
-    user: { id: user.user_id, name: user.full_name, email: user.email, role: user.role, profile_image: user.profile_image || null, usn, emp_code, department, subject, scheme }
+    user: { id: user.user_id, name: user.full_name, email: user.email, role: user.role, profile_image: user.profile_image || null, usn, emp_code, department, subject, scheme, semester }
   });
 };
 
@@ -99,18 +102,38 @@ exports.register = async (req, res) => {
 exports.me = async (req, res) => {
   try {
     const [rows] = await db.execute(
-      'SELECT u.user_id, u.full_name, u.email, u.role, u.phone, u.profile_image, s.usn, s.semester, s.batch_year, s.department AS student_dept, s.scheme AS student_scheme, f.emp_code, f.department AS faculty_dept, f.subject AS faculty_subject, f.scheme AS faculty_scheme FROM users u LEFT JOIN students s ON u.user_id = s.user_id LEFT JOIN faculty f ON u.user_id = f.user_id WHERE u.user_id=?',
+      `SELECT u.user_id, u.full_name, u.email, u.role, u.phone, u.profile_image, u.scheme_id, u.dept AS user_dept, u.semester AS user_sem,
+              s.usn, s.semester, s.batch_year, s.department AS student_dept, s.scheme AS student_scheme,
+              f.emp_code, f.department AS faculty_dept, f.subject AS faculty_subject, f.scheme AS faculty_scheme,
+              sch.name AS scheme_name
+       FROM users u
+       LEFT JOIN students s ON u.user_id = s.user_id
+       LEFT JOIN faculty f ON u.user_id = f.user_id
+       LEFT JOIN schemes sch ON u.scheme_id = sch.id
+       WHERE u.user_id=?`,
       [req.user.id]
     );
     const u = rows[0] || null;
     if (u) {
-      u.department = u.role === 'student' ? (u.student_dept || 'Computer Science & Engineering') : u.role === 'faculty' ? (u.faculty_dept || 'Computer Science & Engineering') : 'Computer Science & Engineering';
-      u.scheme = u.role === 'student' ? u.student_scheme : u.faculty_scheme;
+      u.department = u.role === 'student'
+        ? (u.student_dept || u.user_dept || 'Computer Science & Engineering')
+        : u.role === 'faculty'
+        ? (u.faculty_dept || u.user_dept || 'Computer Science & Engineering')
+        : 'Computer Science & Engineering';
+      u.scheme = u.role === 'student'
+        ? (u.student_scheme || u.scheme_name || null)
+        : (u.faculty_scheme || u.scheme_name || null);
+      if (u.role === 'student') {
+        u.semester = u.semester || u.user_sem || 1;
+      }
       u.subject = u.faculty_subject || null;
       delete u.student_dept;
       delete u.faculty_dept;
       delete u.student_scheme;
       delete u.faculty_scheme;
+      delete u.user_dept;
+      delete u.user_sem;
+      delete u.scheme_name;
     }
     res.json(u);
   } catch (err) {
@@ -168,7 +191,7 @@ exports.updateProfile = async (req, res) => {
       }
     }
 
-    // Update student-specific profile fields (semester/academic year)
+    // Update student-specific profile fields (semester/academic year/scheme)
     if (user.role === 'student') {
       let semVal = semester ? parseInt(semester) : null;
       if (academic_year && !semVal) {
@@ -180,6 +203,32 @@ exports.updateProfile = async (req, res) => {
       if (semVal) {
         await db.execute('UPDATE students SET semester = ? WHERE user_id = ?', [semVal, userId]);
       }
+      if (req.body.scheme) {
+        await db.execute('UPDATE students SET scheme = ? WHERE user_id = ?', [req.body.scheme.trim(), userId]);
+      }
+    } else if (user.role === 'faculty' && req.body.scheme) {
+      await db.execute('UPDATE faculty SET scheme = ? WHERE user_id = ?', [req.body.scheme.trim(), userId]);
+    }
+
+    // Sync users table scheme_id, dept, semester
+    if (req.body.scheme || department || semester) {
+      const schemeVal = req.body.scheme ? req.body.scheme.trim() : null;
+      let schemeId = null;
+      if (schemeVal) {
+        const yr = schemeVal.replace(/\D/g, '') || schemeVal;
+        const [sch] = await db.execute('SELECT id FROM schemes WHERE name = ? OR name LIKE ? LIMIT 1', [yr, `${yr}%`]);
+        if (sch && sch[0]) schemeId = sch[0].id;
+      }
+      const deptVal = department ? department.trim() : null;
+      const semVal = semester ? parseInt(semester) : null;
+      await db.execute(`
+        UPDATE users
+        SET 
+          dept = COALESCE(?, dept),
+          semester = COALESCE(?, semester),
+          scheme_id = COALESCE(?, scheme_id)
+        WHERE user_id = ?
+      `, [deptVal, semVal, schemeId, userId]);
     }
 
     audit.log(userId, 'UPDATE_PROFILE', 'users', userId, 'Updated profile details', req.ip);
@@ -330,8 +379,15 @@ exports.signup = async (req, res) => {
     return res.status(400).json({ message: 'Name, email, password, and role are required' });
   }
 
+  let cleanEmail;
+  try {
+    cleanEmail = normalizeAndValidateEmail(email);
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
+  }
+
   // Check if active user already exists with this email
-  const [existing] = await db.execute('SELECT user_id, is_active FROM users WHERE email=?', [email]);
+  const [existing] = await db.execute('SELECT user_id, is_active FROM users WHERE email=?', [cleanEmail]);
   if (existing.length) {
     const ex = existing[0];
     if (ex.is_active) {
@@ -353,7 +409,6 @@ exports.signup = async (req, res) => {
       return res.status(400).json({ message: 'Invalid USN format. USN must follow college code 4PM format (e.g. 4PM22CS001)' });
     }
 
-    // Check if USN belongs to an active vs unverified user
     const [usnRows] = await db.execute(
       'SELECT s.user_id, u.is_active FROM students s JOIN users u ON s.user_id = u.user_id WHERE s.usn=?',
       [usn.trim().toUpperCase()]
@@ -378,7 +433,6 @@ exports.signup = async (req, res) => {
       return res.status(400).json({ message: 'Assigned subject is required for faculty registration' });
     }
 
-    // Check if emp_code belongs to an active vs unverified user
     const [empRows] = await db.execute(
       'SELECT f.user_id, u.is_active FROM faculty f JOIN users u ON f.user_id = u.user_id WHERE f.emp_code=?',
       [emp_code.trim()]
@@ -398,20 +452,22 @@ exports.signup = async (req, res) => {
   const conn = await db.getConnection();
   try {
     const hash = await bcrypt.hash(password, 10);
-
-    // Ensure department column exists in users table
     await conn.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS department VARCHAR(120)').catch(() => {});
 
     const dept = department || 'Computer Science & Engineering';
 
+    const schemeYear = (scheme || '2022').replace(/\D/g, '') || '2022';
+    const [schRows] = await conn.query('SELECT id FROM schemes WHERE name = ? OR name LIKE ? LIMIT 1', [schemeYear, `${schemeYear}%`]);
+    const schemeId = schRows && schRows[0] ? schRows[0].id : null;
+    const semVal = semester ? parseInt(semester) : 1;
+
     // Create user with is_active=false (pending email verification)
     const [r] = await conn.query(
-      'INSERT INTO users (full_name, email, password_hash, role, phone, department, is_active) VALUES (?,?,?,?,?,?,?)',
-      [full_name, email, hash, role, phone || null, dept, false]
+      'INSERT INTO users (full_name, email, password_hash, role, phone, department, is_active, scheme_id, dept, semester) VALUES (?,?,?,?,?,?,?,?,?,?)',
+      [full_name, cleanEmail, hash, role, phone || null, dept, false, schemeId, dept, semVal]
     );
     const userId = r.insertId;
 
-    // Create role-specific record
     if (role === 'student') {
       await conn.query(
         'INSERT INTO students (user_id, usn, department, semester, section, batch_year, scheme) VALUES (?,?,?,?,?,?,?)',
@@ -424,44 +480,59 @@ exports.signup = async (req, res) => {
       );
     }
 
-    // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    // Generate secure 6-digit OTP & SHA-256 Hash
+    const otp = generateSecureOtp();
+    const otpHash = hashOtp(otp);
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    await conn.query(`CREATE TABLE IF NOT EXISTS signup_otps (
-      email VARCHAR(191) PRIMARY KEY,
-      otp VARCHAR(10) NOT NULL,
-      resend_count INT DEFAULT 0,
-      expires_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-    )`).catch(() => {});
+    await conn.query('DELETE FROM signup_otps WHERE email=?', [cleanEmail]);
+    await conn.query(
+      'INSERT INTO signup_otps (email, otp_hash, resend_count, attempts, expires_at, last_sent_at) VALUES (?,?,?,?, ?, CURRENT_TIMESTAMP)',
+      [cleanEmail, otpHash, 1, 0, otpExpires]
+    );
 
-    await conn.query('DELETE FROM signup_otps WHERE email=?', [email]);
-    await conn.query('INSERT INTO signup_otps (email, otp, expires_at) VALUES (?,?,?)',
-      [email, otp, otpExpires]);
-
+    // Send verification email via Gmail SMTP
+    let emailResult;
     try {
-      await sendMail({
-        to: email,
-        subject: 'Smart Lab — Email Verification Code',
-        html: `<p>Hi ${full_name},</p><p>Your verification code is: <strong style="font-size:24px;letter-spacing:4px">${otp}</strong></p><p>This code expires in 10 minutes.</p>`,
+      emailResult = await sendMail({
+        to: cleanEmail,
+        subject: 'Your PESITM Smart Lab verification code',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 10px; background-color: #ffffff;">
+            <div style="text-align: center; margin-bottom: 20px;">
+              <h2 style="color: #2563eb; margin: 0; font-size: 22px;">PESITM Smart Lab Management</h2>
+              <p style="color: #64748b; font-size: 13px; margin-top: 4px;">College of Engineering & Technology</p>
+            </div>
+            <p style="color: #334155; font-size: 15px;">Hi <strong>${full_name}</strong>,</p>
+            <p style="color: #334155; font-size: 14px; line-height: 1.5;">Thank you for registering on PESITM Smart Lab. Use the 6-digit verification code below to complete your account activation:</p>
+            <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 18px; border-radius: 8px; text-align: center; margin: 24px 0;">
+              <span style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #1e293b;">${otp}</span>
+            </div>
+            <p style="color: #64748b; font-size: 13px; margin-bottom: 5px;">• Code expires in <strong>10 minutes</strong>.</p>
+            <p style="color: #64748b; font-size: 13px; margin-top: 0;">• If you don't see this in your inbox, please check your <strong>Spam / Junk folder</strong>.</p>
+            <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+            <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 0;">PESITM Smart Lab System &copy; 2026. Automated message — please do not reply.</p>
+          </div>
+        `,
       });
-    } catch (err) {
-      console.error('Failed to send verification email (dev fallback):', err.message);
-      console.log(`[DEV OTP FALLBACK] Verification code for ${email}: ${otp}`);
+    } catch (mailErr) {
+      console.error(`❌ [SIGNUP EMAIL FAILED] Could not send code to ${cleanEmail}:`, mailErr.message);
+      return res.status(503).json({
+        message: 'Email service is currently unavailable. Please check your network connection or try again in a few moments.',
+      });
     }
 
     res.status(201).json({
-      message: 'Verification code sent to your email.',
-      email,
-      devOtp: process.env.NODE_ENV !== 'production' ? otp : undefined
+      message: 'Verification code sent to your email. Please check your inbox or spam folder.',
+      email: cleanEmail,
+      provider: emailResult?.provider,
     });
   } catch (e) {
     if (e.code === '23505' || e.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({ message: 'Email or USN/Employee code already in use' });
     }
     console.error('Signup error:', e);
-    res.status(500).json({ message: e.message });
+    res.status(500).json({ message: e.message || 'Signup failed' });
   } finally {
     conn.release();
   }
@@ -470,55 +541,96 @@ exports.signup = async (req, res) => {
 exports.verifySignupCode = async (req, res) => {
   const { email, otp } = req.body;
   if (!email || !otp) {
-    return res.status(400).json({ message: 'Email and verification code are required' });
+    return res.status(400).json({ message: 'Email and 6-digit verification code are required' });
   }
 
-  const [otpRows] = await db.execute(
-    'SELECT * FROM signup_otps WHERE email=? AND otp=? AND expires_at > CURRENT_TIMESTAMP',
-    [email, otp]
-  );
+  let cleanEmail;
+  try {
+    cleanEmail = normalizeAndValidateEmail(email);
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
+  }
 
+  const cleanOtp = String(otp).trim();
+  if (!/^\d{6}$/.test(cleanOtp)) {
+    return res.status(400).json({ message: 'Verification code must be a 6-digit number' });
+  }
+
+  const [otpRows] = await db.execute('SELECT * FROM signup_otps WHERE email=?', [cleanEmail]);
   if (!otpRows.length) {
-    return res.status(401).json({ message: 'Invalid or expired verification code' });
+    return res.status(400).json({ message: 'No active verification code found. Please request a new code.' });
   }
 
-  // Activate the user account
-  await db.execute('UPDATE users SET is_active=true WHERE email=?', [email]);
-  await db.execute('DELETE FROM signup_otps WHERE email=?', [email]);
+  const record = otpRows[0];
+  const now = new Date();
 
-  // Get user and generate JWT
-  const [userRows] = await db.execute('SELECT * FROM users WHERE email=?', [email]);
+  // 1. Check Expiry (10 min)
+  if (new Date(record.expires_at) < now) {
+    await db.execute('DELETE FROM signup_otps WHERE email=?', [cleanEmail]);
+    return res.status(400).json({ message: 'Verification code has expired. Please request a new code.' });
+  }
+
+  // 2. Check Max Attempts (Max 5)
+  const currentAttempts = Number(record.attempts || 0);
+  if (currentAttempts >= 5) {
+    await db.execute('DELETE FROM signup_otps WHERE email=?', [cleanEmail]);
+    return res.status(400).json({ message: 'Maximum verification attempts (5) exceeded. Please request a new code.' });
+  }
+
+  // Increment attempts counter
+  await db.execute('UPDATE signup_otps SET attempts = attempts + 1 WHERE email=?', [cleanEmail]);
+
+  // 3. Verify SHA-256 Hash
+  const isMatch = verifyOtpHash(cleanOtp, record.otp_hash);
+  if (!isMatch) {
+    const remainingAttempts = 5 - (currentAttempts + 1);
+    return res.status(400).json({
+      message: `Invalid 6-digit verification code. (${remainingAttempts} attempt${remainingAttempts === 1 ? '' : 's'} remaining)`,
+      remainingAttempts,
+    });
+  }
+
+  // Success! Delete OTP record & activate account
+  await db.execute('UPDATE users SET is_active=true WHERE email=?', [cleanEmail]);
+  await db.execute('DELETE FROM signup_otps WHERE email=?', [cleanEmail]);
+
+  // Fetch activated user details & generate JWT token
+  const [userRows] = await db.execute('SELECT * FROM users WHERE email=?', [cleanEmail]);
   if (!userRows.length) {
-    return res.status(404).json({ message: 'User not found' });
+    return res.status(404).json({ message: 'User account not found' });
   }
 
   const user = userRows[0];
-
   let usn = null;
   let emp_code = null;
   let department = null;
   let student_id = null;
   let faculty_id = null;
+  let scheme = null;
+  let semester = null;
   if (user.role === 'student') {
-    const [stdRows] = await db.execute('SELECT student_id, usn, department FROM students WHERE user_id=?', [user.user_id]);
+    const [stdRows] = await db.execute('SELECT student_id, usn, department, semester, scheme FROM students WHERE user_id=?', [user.user_id]);
     if (stdRows.length) {
       student_id = stdRows[0].student_id;
       usn = stdRows[0].usn;
       department = stdRows[0].department;
+      semester = stdRows[0].semester;
+      scheme = stdRows[0].scheme;
     }
   } else if (user.role === 'faculty') {
-    const [facRows] = await db.execute('SELECT faculty_id, emp_code, department FROM faculty WHERE user_id=?', [user.user_id]);
+    const [facRows] = await db.execute('SELECT faculty_id, emp_code, department, scheme FROM faculty WHERE user_id=?', [user.user_id]);
     if (facRows.length) {
       faculty_id = facRows[0].faculty_id;
       emp_code = facRows[0].emp_code;
       department = facRows[0].department;
+      scheme = facRows[0].scheme;
     }
   } else if (user.role === 'hod') {
     department = 'Computer Science & Engineering';
   }
 
   const token = jwt.sign(
-    { id: user.user_id, role: user.role, name: user.full_name, email: user.email, student_id, faculty_id },
+    { id: user.user_id, role: user.role, name: user.full_name, email: user.email, student_id, faculty_id, scheme, semester },
     JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES || '7d' }
   );
@@ -527,7 +639,7 @@ exports.verifySignupCode = async (req, res) => {
 
   res.json({
     token,
-    user: { id: user.user_id, name: user.full_name, email: user.email, role: user.role, usn, emp_code, department }
+    user: { id: user.user_id, name: user.full_name, email: user.email, role: user.role, usn, emp_code, department, scheme, semester }
   });
 };
 
@@ -537,62 +649,93 @@ exports.resendCode = async (req, res) => {
     return res.status(400).json({ message: 'Email address is required' });
   }
 
+  let cleanEmail;
+  try {
+    cleanEmail = normalizeAndValidateEmail(email);
+  } catch (err) {
+    return res.status(400).json({ message: err.message });
+  }
+
   const tableName = type === 'signup' ? 'signup_otps' : 'login_otps';
-  
-  try {
-    await db.execute(`CREATE TABLE IF NOT EXISTS ${tableName} (
-      email VARCHAR(191) PRIMARY KEY,
-      otp VARCHAR(10) NOT NULL,
-      resend_count INT DEFAULT 0,
-      expires_at TIMESTAMPTZ NOT NULL,
-      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-    )`).catch(() => {});
-    await db.execute(`ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS resend_count INT DEFAULT 0`).catch(() => {});
-  } catch (err) {
-    // table exists
-  }
 
-  let currentCount = 0;
-  try {
-    const [rows] = await db.execute(`SELECT resend_count FROM ${tableName} WHERE email=?`, [email]);
-    if (rows.length && rows[0].resend_count !== null && rows[0].resend_count !== undefined) {
-      currentCount = Number(rows[0].resend_count);
+  const [existing] = await db.execute(
+    `SELECT otp_hash, resend_count, attempts, expires_at, last_sent_at, created_at FROM ${tableName} WHERE email=?`,
+    [cleanEmail]
+  );
+
+  if (existing.length) {
+    const rec = existing[0];
+    const now = new Date();
+
+    // 1. 60s resend cooldown check
+    if (rec.last_sent_at) {
+      const secondsSinceLast = (now.getTime() - new Date(rec.last_sent_at).getTime()) / 1000;
+      if (secondsSinceLast < 60) {
+        const remainingSec = Math.ceil(60 - secondsSinceLast);
+        return res.status(429).json({
+          message: `Please wait ${remainingSec} second${remainingSec === 1 ? '' : 's'} before requesting another code.`,
+          cooldownRemaining: remainingSec,
+        });
+      }
     }
-  } catch (err) {
-    currentCount = 0;
+
+    // 2. 15-minute window rate limiting (max 3 sends per 15 minutes)
+    const minutesSinceCreated = (now.getTime() - new Date(rec.created_at || now).getTime()) / (1000 * 60);
+    if (minutesSinceCreated <= 15 && Number(rec.resend_count || 0) >= 3) {
+      return res.status(429).json({
+        message: 'Maximum resend limit reached (3 codes per 15 minutes). Please check your inbox/spam folder or try again later.',
+      });
+    }
   }
 
-  if (currentCount >= 3) {
-    return res.status(429).json({ message: 'Maximum resend limit reached (3 times). Please check your inbox or try signing in again.' });
-  }
-
-  const nextCount = currentCount + 1;
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const resendCount = existing.length ? Number(existing[0].resend_count || 0) + 1 : 1;
+  const otp = generateSecureOtp();
+  const otpHash = hashOtp(otp);
   const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
 
-  const [users] = await db.execute('SELECT full_name, user_id FROM users WHERE email=?', [email]);
+  const [users] = await db.execute('SELECT full_name, user_id FROM users WHERE email=?', [cleanEmail]);
   const fullName = users.length ? users[0].full_name : 'User';
 
-  await db.execute(`DELETE FROM ${tableName} WHERE email=?`, [email]);
-  await db.execute(`INSERT INTO ${tableName} (email, otp, resend_count, expires_at) VALUES (?,?,?,?)`,
-    [email, otp, nextCount, otpExpires]);
+  await db.execute(`DELETE FROM ${tableName} WHERE email=?`, [cleanEmail]);
+  await db.execute(
+    `INSERT INTO ${tableName} (email, otp_hash, resend_count, attempts, expires_at, last_sent_at) VALUES (?,?,?,?, ?, CURRENT_TIMESTAMP)`,
+    [cleanEmail, otpHash, resendCount, 0, otpExpires]
+  );
 
   try {
-    await sendMail({
-      to: email,
-      subject: 'Smart Lab — New Verification Code',
-      html: `<p>Hi ${fullName},</p><p>Your new verification code is: <strong style="font-size:24px;letter-spacing:4px">${otp}</strong></p><p>This code expires in 10 minutes.</p>`,
+    const emailResult = await sendMail({
+      to: cleanEmail,
+      subject: 'Your PESITM Smart Lab verification code',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 10px; background-color: #ffffff;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <h2 style="color: #2563eb; margin: 0; font-size: 22px;">PESITM Smart Lab Management</h2>
+            <p style="color: #64748b; font-size: 13px; margin-top: 4px;">College of Engineering & Technology</p>
+          </div>
+          <p style="color: #334155; font-size: 15px;">Hi <strong>${fullName}</strong>,</p>
+          <p style="color: #334155; font-size: 14px; line-height: 1.5;">Here is your new 6-digit verification code:</p>
+          <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; padding: 18px; border-radius: 8px; text-align: center; margin: 24px 0;">
+            <span style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #1e293b;">${otp}</span>
+          </div>
+          <p style="color: #64748b; font-size: 13px; margin-bottom: 5px;">• Code expires in <strong>10 minutes</strong>.</p>
+          <p style="color: #64748b; font-size: 13px; margin-top: 0;">• Check your <strong>Spam / Junk folder</strong> if not in primary inbox.</p>
+          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+          <p style="color: #94a3b8; font-size: 11px; text-align: center; margin: 0;">PESITM Smart Lab System &copy; 2026.</p>
+        </div>
+      `,
+    });
+
+    audit.log(users[0]?.user_id || 0, 'RESEND_OTP', 'users', users[0]?.user_id || 0, `Resent OTP code (${resendCount}/3) to ${cleanEmail}`, req.ip);
+
+    const remaining = Math.max(0, 3 - resendCount);
+    res.json({
+      message: `New verification code sent to your email. (${remaining} resend attempt${remaining === 1 ? '' : 's'} left)`,
+      resendCount,
+      remainingResends: remaining,
+      provider: emailResult?.provider,
     });
   } catch (err) {
-    console.error('Failed to send resend email:', err);
+    console.error('Failed to resend code:', err);
+    res.status(503).json({ message: err.message || 'Email service unavailable. Please try again in a few moments.' });
   }
-
-  audit.log(users[0]?.user_id || 0, 'RESEND_OTP', 'users', users[0]?.user_id || 0, `Resent OTP code (${nextCount}/3) to ${email}`, req.ip);
-
-  const remaining = 3 - nextCount;
-  res.json({
-    message: `New verification code sent to your email. (${remaining} resend attempt${remaining === 1 ? '' : 's'} left)`,
-    resendCount: nextCount,
-    remainingResends: remaining
-  });
 };

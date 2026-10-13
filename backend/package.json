@@ -5,7 +5,8 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "seed:labs": "node scripts/importLabPrograms.js seed/data/vtu_2022_cse_lab_programs.csv seed/data/vtu_2022_cse_labs_addon.csv seed/data/vtu_2025_cse_lab_programs.csv"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

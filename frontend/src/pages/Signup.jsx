@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import { Shield, BookOpen, GraduationCap, Lock, Mail, User, Hash, BadgeCheck, ArrowLeft, CheckCircle2, RotateCw } from 'lucide-react';
+import { DEPARTMENTS, getDeptCode, formatUsnForDept } from '../utils/deptUtils.js';
 
 export default function Signup() {
   const { user, setUser } = useAuth();
@@ -49,13 +50,21 @@ export default function Signup() {
       const { data } = await api.post('/auth/resend-code', { email: pendingEmail, type: 'signup' });
       toast.success(data.message || 'New verification code sent to your email!');
       setResendCount(c => c + 1);
-      setResendTimer(30);
+      setResendTimer(60);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to resend code');
     } finally {
       setResending(false);
     }
   };
+
+  const [deptMap, setDeptMap] = useState({});
+
+  useEffect(() => {
+    api.get('/coding/dept-map')
+      .then(res => setDeptMap(res.data || {}))
+      .catch(() => {});
+  }, []);
 
   const [loading, setLoading] = useState(false);
 
@@ -65,7 +74,39 @@ export default function Signup() {
       val = val.slice(3);
     }
     val = val.slice(0, 7);
+
+    // Pre-fill department from USN if dept_map has the code
+    const match = val.match(/^(\d{2})([A-Z]{2})/);
+    if (match) {
+      const code = match[2];
+      if (deptMap[code]) {
+        const found = DEPARTMENTS.find(d => d.code === code || d.name.toLowerCase().includes(deptMap[code].toLowerCase()));
+        if (found && (!department || department !== found.name)) {
+          setDepartment(found.name);
+        }
+      }
+    }
+
+    if (!department) {
+      setUsn(val ? `4PM${val}` : '');
+      return;
+    }
+    const deptCode = getDeptCode(department);
+    if (/^\d{5}$/.test(val)) {
+      val = `${val.slice(0, 2)}${deptCode}${val.slice(2)}`;
+    } else if (/^\d{2}[A-Z]{2}\d{1,3}$/.test(val)) {
+      const yr = val.slice(0, 2);
+      const roll = val.slice(4);
+      val = `${yr}${deptCode}${roll}`;
+    }
     setUsn(val ? `4PM${val}` : '');
+  };
+
+  const handleDeptChange = (newDept) => {
+    setDepartment(newDept);
+    if (usn) {
+      setUsn(formatUsnForDept(usn, newDept));
+    }
   };
 
   if (user) return <Navigate to="/" replace />;
@@ -105,6 +146,7 @@ export default function Signup() {
       toast.success(data.message || 'Verification code sent to your email!');
       setPendingEmail(email);
       setOtp(''); // Always require manual entry of email verification code
+      setResendTimer(60); // Start 60s cooldown immediately (matches backend)
       setStep(2);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Signup failed');
@@ -507,15 +549,12 @@ export default function Signup() {
                           required
                           className={`input pl-10 bg-slate-50/50 dark:bg-slate-850/50 border-slate-200 dark:border-slate-850 transition-all ${currentRole.ringColor}`}
                           value={department}
-                          onChange={e => setDepartment(e.target.value)}
+                          onChange={e => handleDeptChange(e.target.value)}
                         >
                           <option value="">-- Select Department --</option>
-                          <option value="Computer Science & Engineering">Computer Science & Engineering</option>
-                          <option value="Information Science & Engineering">Information Science & Engineering</option>
-                          <option value="Computer Engineering">Computer Engineering</option>
-                          <option value="Artificial Intelligence & Machine Learning">Artificial Intelligence & Machine Learning</option>
-                          <option value="Computer Science & Design">Computer Science & Design</option>
-                          <option value="Computer Science & Data Science">Computer Science & Data Science</option>
+                          {DEPARTMENTS.map(d => (
+                            <option key={d.name} value={d.name}>{d.name} ({d.code})</option>
+                          ))}
                         </select>
                       </div>
                     </div>
@@ -524,13 +563,20 @@ export default function Signup() {
                     {activeRole === 'student' && (
                       <>
                         <div>
-                          <div className="flex justify-between items-center mb-1.5">
+                          <div className="flex justify-between items-center mb-1.5 flex-wrap gap-1">
                             <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                               USN (University Seat Number)
                             </label>
-                            <span className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
-                              College Code: 4PM
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {department && (
+                                <span className="text-[10px] font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
+                                  Dept Code: {getDeptCode(department)}
+                                </span>
+                              )}
+                              <span className="text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                                College Code: 4PM
+                              </span>
+                            </div>
                           </div>
                           <div className="relative flex items-center">
                             <div className="absolute left-0 inset-y-0 pl-3.5 flex items-center pointer-events-none z-10 text-slate-400">
@@ -543,14 +589,16 @@ export default function Signup() {
                               type="text"
                               required
                               maxLength={10}
-                              placeholder="22CS001"
+                              placeholder={department ? `24${getDeptCode(department)}011` : "24CS011"}
+                              autoComplete="off"
+                              name="usn_field"
                               className={`input pl-[4.5rem] bg-slate-50/50 dark:bg-slate-850/50 border-slate-200 dark:border-slate-850 font-mono font-semibold tracking-wider transition-all ${currentRole.ringColor}`}
                               value={usn.startsWith('4PM') ? usn.slice(3) : usn}
                               onChange={handleUsnInputChange}
                             />
                           </div>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1 font-mono">
-                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">Format:</span> 4PM + YY (Year) + Branch (CS/IS/AI) + Roll (001)
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1 font-mono flex-wrap">
+                            <span className="text-emerald-600 dark:text-emerald-400 font-bold">Format:</span> 4PM + YY (Year) + <span className="font-bold underline text-emerald-600 dark:text-emerald-400">{department ? getDeptCode(department) : 'CS'}</span> + Roll (011) <span className="text-slate-400">e.g. 4PM24{department ? getDeptCode(department) : 'CS'}011</span>
                           </p>
                           {usn && (
                             <div className="mt-1.5 text-[11px] font-mono bg-emerald-50/80 dark:bg-emerald-950/40 p-2 rounded-xl border border-emerald-200 dark:border-emerald-800/60 text-slate-700 dark:text-slate-200 flex justify-between items-center shadow-xs">
@@ -614,6 +662,8 @@ export default function Signup() {
                             </span>
                             <input
                               type="text" required placeholder="e.g. FAC002"
+                              autoComplete="off"
+                              name="emp_code_field"
                               className={`input pl-10 bg-slate-50/50 dark:bg-slate-850/50 border-slate-200 dark:border-slate-850 transition-all ${currentRole.ringColor}`}
                               value={empCode} onChange={e => setEmpCode(e.target.value.toUpperCase())}
                             />
@@ -663,7 +713,7 @@ export default function Signup() {
                               <option value="Operating Systems Lab">Operating Systems Lab</option>
                               <option value="AI & Machine Learning Lab">AI & Machine Learning Lab</option>
                               <option value="C Programming Lab">C Programming Lab</option>
-                              <option value="Web Technologies Lab">Web Technologies Lab</option>
+                              <option value="MongoDB Lab">MongoDB Lab</option>
                               <option value="Computer Networks Lab">Computer Networks Lab</option>
                             </select>
                           </div>
@@ -680,6 +730,7 @@ export default function Signup() {
                         </span>
                         <input
                           type="password" required minLength={6} placeholder="Min 6 characters"
+                          autoComplete="new-password"
                           className={`input pl-10 bg-slate-50/50 dark:bg-slate-850/50 border-slate-200 dark:border-slate-850 transition-all ${currentRole.ringColor}`}
                           value={password} onChange={e => setPassword(e.target.value)}
                         />
@@ -695,6 +746,7 @@ export default function Signup() {
                         </span>
                         <input
                           type="password" required minLength={6} placeholder="Re-enter password"
+                          autoComplete="new-password"
                           className={`input pl-10 bg-slate-50/50 dark:bg-slate-850/50 border-slate-200 dark:border-slate-850 transition-all ${currentRole.ringColor}`}
                           value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
                         />
@@ -714,15 +766,33 @@ export default function Signup() {
                 /* Step 2: OTP Verification */
                 <form onSubmit={handleVerifyOtp} className="space-y-4">
 
+                  {/* Spam check notice */}
+                  <div className="flex items-start gap-2.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl px-3.5 py-3">
+                    <span className="text-amber-500 shrink-0 mt-0.5 text-base">📬</span>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed">
+                      A 6-digit code was sent to <strong>{pendingEmail}</strong>.
+                      <br />
+                      <span className="font-bold">Not in inbox?</span> Check your{' '}
+                      <strong>Spam / Junk folder</strong> — verification emails often land there.
+                      Code expires in <strong>10 minutes</strong>.
+                    </p>
+                  </div>
+
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Verification Code</label>
+                    <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">6-Digit Verification Code</label>
                     <div className="relative">
                       <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 pointer-events-none">
                         <BadgeCheck size={14} />
                       </span>
                       <input
-                        type="text" required maxLength={6} placeholder="Enter 6-digit code"
-                        className={`input pl-10 bg-slate-50/50 dark:bg-slate-850/50 border-slate-200 dark:border-slate-850 transition-all text-center text-lg font-mono font-bold tracking-[0.5em] ${currentRole.ringColor}`}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        required
+                        maxLength={6}
+                        placeholder="• • • • • •"
+                        autoComplete="one-time-code"
+                        className={`input pl-10 bg-slate-50/50 dark:bg-slate-850/50 border-slate-200 dark:border-slate-850 transition-all text-center text-xl font-mono font-bold tracking-[0.6em] ${currentRole.ringColor}`}
                         value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                       />
                     </div>
@@ -731,9 +801,17 @@ export default function Signup() {
                   <button
                     type="submit"
                     disabled={loading || otp.length < 6}
-                    className={`btn-primary btn-glow-effect w-full text-white font-bold py-3 rounded-xl transition duration-300 cursor-pointer border-0 flex items-center justify-center gap-1.5 ${currentRole.btnBg}`}
+                    className={`btn-primary btn-glow-effect w-full text-white font-bold py-3 rounded-xl transition duration-300 border-0 flex items-center justify-center gap-2 ${currentRole.btnBg} disabled:opacity-60 disabled:cursor-not-allowed`}
                   >
-                    {loading ? 'Verifying...' : 'Verify & Continue'}
+                    {loading ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4 text-white shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        Verifying...
+                      </>
+                    ) : 'Verify & Activate Account'}
                   </button>
 
                   <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
@@ -741,15 +819,21 @@ export default function Signup() {
                       type="button"
                       onClick={handleResendCode}
                       disabled={resendTimer > 0 || resendCount >= 3 || resending}
-                      className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline disabled:text-slate-400 dark:disabled:text-slate-600 disabled:no-underline flex items-center gap-1.5 bg-transparent border-0 cursor-pointer"
+                      className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline disabled:text-slate-400 dark:disabled:text-slate-600 disabled:no-underline flex items-center gap-1.5 bg-transparent border-0 cursor-pointer disabled:cursor-not-allowed"
                     >
                       <RotateCw size={13} className={resending ? 'animate-spin' : ''} />
-                      {resending ? 'Sending...' : resendCount >= 3 ? 'Max resends reached (3/3)' : resendTimer > 0 ? `Resend in ${resendTimer}s` : `Resend Code ${resendCount > 0 ? `(${resendCount}/3)` : ''}`}
+                      {resending
+                        ? 'Sending...'
+                        : resendCount >= 3
+                          ? 'Max resends reached (3/3)'
+                          : resendTimer > 0
+                            ? `Resend in ${resendTimer}s`
+                            : `Resend Code${resendCount > 0 ? ` (${resendCount}/3 used)` : ''}`}
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => { setStep(1); setOtp(''); setResendCount(0); }}
+                      onClick={() => { setStep(1); setOtp(''); setResendCount(0); setResendTimer(0); }}
                       className="text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 flex items-center gap-1 bg-transparent border-0 cursor-pointer"
                     >
                       <ArrowLeft size={12} /> Back to signup

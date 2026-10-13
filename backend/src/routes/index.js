@@ -179,6 +179,16 @@ router.get ('/kahoot/room/:pin',    verifyToken, kahoot.getRoomInfo);
 router.get ('/kahoot/active-rooms', verifyToken, kahoot.listActiveRooms);
 
 // ---- HACKERRANK CODING ARENA ----
+const uploadCsv = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+router.get ('/coding/schemes', verifyToken, coding.getSchemes);
+router.get ('/coding/dept-map', coding.getDeptMap);
+router.get ('/coding/subjects', verifyToken, coding.getSubjects);
+router.get ('/coding/subjects/:subjectId/programs', verifyToken, coding.getSubjectPrograms);
+router.post('/coding/electives/:subjectId', verifyToken, requireRole('student'), coding.chooseElective);
+router.delete('/coding/electives/:subjectId', verifyToken, requireRole('student'), coding.dropElective);
+router.post('/coding/curriculum/preview', verifyToken, requireRole('hod'), uploadCsv.single('csv_file'), coding.previewCurriculumCsv);
+router.post('/coding/curriculum/import', verifyToken, requireRole('hod'), uploadCsv.single('csv_file'), coding.importCurriculum);
+
 router.get ('/coding/categories', verifyToken, coding.getCategories);
 router.get ('/coding/placement-patterns', verifyToken, coding.getPlacementPatterns);
 router.get ('/coding/problems', verifyToken, coding.getProblems);

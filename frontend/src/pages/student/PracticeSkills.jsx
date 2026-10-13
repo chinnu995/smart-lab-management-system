@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { 
   Cpu, Database, Calculator, Bot, Code2, Code, Coffee, Terminal, 
   Gem, Server, TerminalSquare, Binary, Regex, Component, Sparkles, ChevronRight, CheckCircle, ArrowRight,
-  Flame, Briefcase, Award, Zap, BookOpen, Filter, Upload, FileText, Check, AlertCircle, X, Loader2,
+  Flame, Briefcase, Award, Zap, BookOpen, Filter, Upload, FileText, Check, AlertCircle, X, Loader2, Search,
   CheckCircle2, PlusCircle, MinusCircle, Layers, Activity
 } from 'lucide-react';
 import { DEPARTMENTS } from '../../utils/deptUtils.js';
@@ -52,9 +52,12 @@ export default function PracticeSkills() {
   const [facDept, setFacDept] = useState('all');
   const [facSemester, setFacSemester] = useState('all');
 
-  // Placement Patterns & General Categories
+  // Placement Patterns & Top Companies State
   const [patterns, setPatterns] = useState([]);
   const [selectedPatternSubject, setSelectedPatternSubject] = useState('ALL');
+  const [selectedCompany, setSelectedCompany] = useState('ALL');
+  const [selectedDifficulty, setSelectedDifficulty] = useState('ALL');
+  const [patternSearch, setPatternSearch] = useState('');
 
   // HOD CSV Modal
   const [csvModalOpen, setCsvModalOpen] = useState(false);
@@ -218,6 +221,30 @@ export default function PracticeSkills() {
     return s.type !== 'activity';
   });
 
+  // Filter placement patterns based on company, subject, difficulty, and search query
+  const filteredPatterns = patterns.filter(pat => {
+    if (selectedCompany !== 'ALL') {
+      const hasComp = (pat.companyTags || []).some(c => c.toLowerCase() === selectedCompany.toLowerCase());
+      if (!hasComp) return false;
+    }
+    if (selectedPatternSubject !== 'ALL') {
+      if ((pat.subject || 'GENERAL').toUpperCase() !== selectedPatternSubject.toUpperCase()) return false;
+    }
+    if (selectedDifficulty !== 'ALL') {
+      if ((pat.difficulty || '').toUpperCase() !== selectedDifficulty.toUpperCase()) return false;
+    }
+    if (patternSearch.trim()) {
+      const q = patternSearch.toLowerCase();
+      const matchTitle = (pat.title || '').toLowerCase().includes(q);
+      const matchDesc = (pat.description || '').toLowerCase().includes(q);
+      const matchPattern = (pat.patternName || '').toLowerCase().includes(q);
+      const matchComp = (pat.companyTags || []).some(c => c.toLowerCase().includes(q));
+      const matchSubj = (pat.subject || '').toLowerCase().includes(q);
+      if (!matchTitle && !matchDesc && !matchPattern && !matchComp && !matchSubj) return false;
+    }
+    return true;
+  });
+
   const studentMaxSem = studentInfo?.semester || user?.semester || 1;
   const availableSemesters = Array.from({ length: studentMaxSem }, (_, i) => i + 1);
 
@@ -300,12 +327,12 @@ export default function PracticeSkills() {
                 onClick={() => setActiveTab('practice')}
                 className={`px-3.5 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
                   activeTab === 'practice'
-                    ? 'bg-white dark:bg-slate-700 text-violet-600 dark:text-violet-300 shadow-xs'
+                    ? 'bg-white dark:bg-slate-700 text-amber-500 dark:text-amber-400 shadow-xs'
                     : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
                 }`}
               >
-                <Activity size={14} />
-                <span>Practice (Activity)</span>
+                <Flame size={14} className={activeTab === 'practice' ? 'text-amber-500' : ''} />
+                <span>Practice (Top Companies)</span>
               </button>
             </div>
 
@@ -384,6 +411,255 @@ export default function PracticeSkills() {
               Retry
             </button>
           </div>
+        ) : activeTab === 'practice' ? (
+          /* ================================================================ */
+          /* PRACTICE TAB: Top Placement Questions (Google, Microsoft, EdgeVerve, etc.) */
+          /* ================================================================ */
+          <div className="space-y-6">
+            {/* Any Curriculum Activity Subjects first (if present) */}
+            {displayedSubjects.length > 0 && (
+              <div className="space-y-3 pb-6 border-b border-slate-200 dark:border-slate-800">
+                <h3 className="text-sm font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  Curriculum Practice Modules
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+                  {displayedSubjects.map((sub) => (
+                    <div
+                      key={sub.id}
+                      onClick={() => navigate(`/student/coding/subject/${sub.id}`)}
+                      className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-violet-500 rounded-2xl p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-200 cursor-pointer group flex flex-col justify-between"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="w-10 h-10 rounded-xl bg-violet-50 dark:bg-violet-950/50 text-violet-600 dark:text-violet-400 flex items-center justify-center shadow-xs">
+                            <Code2 size={20} />
+                          </div>
+                          {sub.code && (
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-violet-50 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-800">
+                              {sub.code}
+                            </span>
+                          )}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-violet-600 transition-colors line-clamp-1">
+                            {sub.name}
+                          </h3>
+                          <span className="text-[10px] text-slate-400 font-mono mt-1 block">
+                            Sem {sub.semester} • {sub.program_count} Programs
+                          </span>
+                        </div>
+                      </div>
+                      <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 mt-4 flex items-center justify-between text-xs font-semibold text-violet-600 dark:text-violet-400">
+                        <span>Open Module</span>
+                        <ChevronRight size={14} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Placement Practice Banner */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-amber-500/15 via-violet-500/10 to-transparent p-6 rounded-3xl border border-amber-500/30">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-amber-500 text-slate-950 flex items-center justify-center font-black shadow-lg shadow-amber-500/20 shrink-0">
+                  <Flame size={28} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h2 className="text-xl font-extrabold text-slate-900 dark:text-white">
+                      Top Company Placement Coding Questions
+                    </h2>
+                    <span className="bg-amber-500/20 text-amber-600 dark:text-amber-400 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full border border-amber-500/30 uppercase">
+                      Campus Recruitment Track
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                    Frequently asked placement coding patterns from top recruiters including <strong>Google</strong>, <strong>Microsoft</strong>, <strong>EdgeVerve</strong>, <strong>Amazon</strong>, <strong>Infosys</strong>, and <strong>TCS Digital</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="px-3.5 py-1.5 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 shadow-xs">
+                  {filteredPatterns.length} of {patterns.length} Challenges
+                </span>
+              </div>
+            </div>
+
+            {/* Filter Bar: Companies, Search, Subject Select, Difficulty */}
+            <div className="space-y-4 bg-slate-50 dark:bg-slate-900/60 p-5 rounded-2xl border border-slate-200 dark:border-slate-800">
+              {/* Row 1: Top Companies Filter */}
+              <div>
+                <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-2">
+                  Filter by Top Company
+                </label>
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                  {['ALL', 'Google', 'Microsoft', 'EdgeVerve', 'Amazon', 'Infosys', 'TCS Digital', 'Goldman Sachs'].map((comp) => {
+                    const count = comp === 'ALL'
+                      ? patterns.length
+                      : patterns.filter(p => (p.companyTags || []).some(c => c.toLowerCase() === comp.toLowerCase())).length;
+                    const isActive = selectedCompany === comp;
+                    return (
+                      <button
+                        key={comp}
+                        onClick={() => setSelectedCompany(comp)}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition-all duration-200 cursor-pointer flex items-center gap-1.5 border ${
+                          isActive
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20 scale-105'
+                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-amber-500/50 hover:bg-amber-500/5'
+                        }`}
+                      >
+                        <span>{comp === 'ALL' ? '🏢 All Companies' : comp}</span>
+                        <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
+                          isActive ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                        }`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Row 2: Search + Difficulty + Subject select */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                {/* Search Bar */}
+                <div className="md:col-span-5 relative">
+                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by topic, pattern, or problem title..."
+                    value={patternSearch}
+                    onChange={(e) => setPatternSearch(e.target.value)}
+                    className="input pl-9 text-xs w-full"
+                  />
+                  {patternSearch && (
+                    <button
+                      onClick={() => setPatternSearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Difficulty Select */}
+                <div className="md:col-span-3">
+                  <select
+                    value={selectedDifficulty}
+                    onChange={(e) => setSelectedDifficulty(e.target.value)}
+                    className="input text-xs w-full"
+                  >
+                    <option value="ALL">All Difficulties</option>
+                    <option value="Easy">Easy (Foundation)</option>
+                    <option value="Medium">Medium (Placement Standard)</option>
+                    <option value="Hard">Hard (Advanced / FAANG)</option>
+                  </select>
+                </div>
+
+                {/* Subject Category Select */}
+                <div className="md:col-span-4">
+                  <select
+                    value={selectedPatternSubject}
+                    onChange={(e) => setSelectedPatternSubject(e.target.value)}
+                    className="input text-xs w-full"
+                  >
+                    <option value="ALL">All Subjects & Tracks</option>
+                    {Array.from(new Set(patterns.map(p => (p.subject || 'GENERAL').toUpperCase()))).map(s => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Pattern Cards Grid */}
+            {filteredPatterns.length === 0 ? (
+              <div className="card bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-12 text-center max-w-xl mx-auto shadow-sm space-y-3">
+                <div className="w-14 h-14 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20">
+                  <AlertCircle size={28} />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">No questions match your filter</h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  Try clearing the search query or selecting another company to view more questions.
+                </p>
+                <button
+                  onClick={() => { setSelectedCompany('ALL'); setSelectedPatternSubject('ALL'); setSelectedDifficulty('ALL'); setPatternSearch(''); }}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow-xs cursor-pointer transition"
+                >
+                  Reset Filters
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {filteredPatterns.map((pat) => (
+                  <div
+                    key={pat.id || pat.slug}
+                    onClick={() => navigate(`/student/coding/problem/${pat.slug}`)}
+                    className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-amber-500 dark:hover:border-amber-500 rounded-2xl p-5 shadow-xs hover:shadow-xl transition-all duration-200 cursor-pointer group flex flex-col justify-between space-y-4"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 uppercase tracking-wider">
+                            {pat.subject}
+                          </span>
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 uppercase tracking-wider">
+                            {pat.patternName}
+                          </span>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase shrink-0 ${
+                          pat.difficulty === 'Easy' ? 'bg-emerald-500/10 text-emerald-500' :
+                          pat.difficulty === 'Medium' ? 'bg-amber-500/10 text-amber-500' :
+                          'bg-rose-500/10 text-rose-500'
+                        }`}>
+                          {pat.difficulty}
+                        </span>
+                      </div>
+
+                      <div>
+                        <h3 className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-amber-500 transition-colors leading-snug">
+                          {pat.title}
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 line-clamp-2 leading-relaxed">
+                          {pat.description}
+                        </p>
+                      </div>
+
+                      <div className="space-y-2 pt-1">
+                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          <Zap size={13} /> {pat.frequency}
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {pat.companyTags?.map((comp) => {
+                            const isFeatured = ['Google', 'Microsoft', 'EdgeVerve'].includes(comp);
+                            return (
+                              <span
+                                key={comp}
+                                className={`text-[9px] font-bold px-2 py-0.5 rounded border transition-colors ${
+                                  isFeatured
+                                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                                }`}
+                              >
+                                {comp}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs font-extrabold text-amber-600 dark:text-amber-400 group-hover:translate-x-1 transition-transform">
+                      <span>Practice Challenge</span>
+                      <ArrowRight size={15} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         ) : displayedSubjects.length === 0 ? (
           /* Empty State: Programs coming soon */
           <div className="card bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-12 text-center max-w-xl mx-auto shadow-sm space-y-4">
@@ -394,7 +670,7 @@ export default function PracticeSkills() {
               <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Programs coming soon</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
                 {user?.role === 'student'
-                  ? `No ${activeTab === 'practice' ? 'practice activities' : 'lab programs'} are currently listed for Semester ${studentInfo?.semester || 1} under your curriculum. Check back soon.`
+                  ? `No lab programs are currently listed for Semester ${studentInfo?.semester || 1} under your curriculum. Check back soon.`
                   : 'No curriculum subjects found for the selected filter combination.'}
               </p>
             </div>

@@ -960,14 +960,8 @@ exports.getSubjects = async (req, res) => {
         });
       }
 
-      // Validate semester param — students may only query <= their semester
-      let querySem = studentSem;
-      if (req.query.semester) {
-        const requested = parseInt(req.query.semester);
-        if (!isNaN(requested) && requested >= 1 && requested <= studentSem) {
-          querySem = requested;
-        }
-      }
+      // Students strictly see only their own current enrolled semester from DB
+      const querySem = studentSem;
 
       const includeActivity = req.query.include === 'activity';
       const csvDept = await resolveStudentCsvDept(student);

@@ -80,11 +80,7 @@ export default function PracticeSkills() {
         params.include = 'activity';
       }
 
-      if (user?.role === 'student') {
-        if (selectedSemester) {
-          params.semester = selectedSemester;
-        }
-      } else {
+      if (user?.role !== 'student') {
         if (facScheme !== 'all') params.scheme = facScheme;
         if (facDept !== 'all') params.dept = facDept;
         if (facSemester !== 'all') params.semester = facSemester;
@@ -325,25 +321,8 @@ export default function PracticeSkills() {
           </div>
         </div>
 
-        {/* Student Semester Selector */}
-        {user?.role === 'student' && (
-          <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            <span className="text-xs font-bold text-slate-400 shrink-0">Semester:</span>
-            {availableSemesters.map(sem => (
-              <button
-                key={sem}
-                onClick={() => setSelectedSemester(sem)}
-                className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer ${
-                  selectedSemester === sem
-                    ? 'bg-violet-600 text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
-              >
-                Sem {sem}
-              </button>
-            ))}
-          </div>
-        )}
+
+        {/* Faculty / HOD Semester Selector only */}
 
         {/* Faculty / HOD Filter Controls */}
         {user?.role !== 'student' && (
@@ -415,7 +394,7 @@ export default function PracticeSkills() {
               <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Programs coming soon</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
                 {user?.role === 'student'
-                  ? `No ${activeTab === 'practice' ? 'practice activities' : 'lab programs'} are currently listed for Semester ${selectedSemester || 1} under your curriculum. Check other semesters or check back soon.`
+                  ? `No ${activeTab === 'practice' ? 'practice activities' : 'lab programs'} are currently listed for Semester ${studentInfo?.semester || 1} under your curriculum. Check back soon.`
                   : 'No curriculum subjects found for the selected filter combination.'}
               </p>
             </div>
@@ -507,88 +486,91 @@ export default function PracticeSkills() {
       </div>
 
       {/* ========================================================================= */}
-      {/* SECTION 2: General Practice (Preserved hardcoded skill categories) */}
+      {/* SECTION 2: General Practice — visible to faculty/HOD only */}
       {/* ========================================================================= */}
-      <div className="space-y-6 pt-4 border-t border-slate-200 dark:border-slate-800">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-extrabold text-slate-900 dark:text-white">General Practice</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Core foundational programming tracks and skill challenges</p>
-          </div>
-          <button
-            onClick={() => navigate('/student/coding/category/all')}
-            className="text-xs font-bold text-violet-600 dark:text-violet-400 hover:text-violet-700 flex items-center gap-1 cursor-pointer"
-          >
-            View All General Problems <ArrowRight size={14} />
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-5">
-          {GENERAL_CATEGORIES.map((cat) => {
-            const IconComp = ICON_MAP[cat.icon] || Code;
-            return (
-              <div
-                key={cat.id}
-                onClick={() => navigate(`/student/coding/category/${encodeURIComponent(cat.name)}`)}
-                className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-violet-500 dark:hover:border-violet-500 rounded-2xl p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-200 cursor-pointer group flex flex-col justify-between"
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 group-hover:bg-violet-600 group-hover:text-white transition-colors flex items-center justify-center shadow-xs">
-                      <IconComp size={20} />
-                    </div>
-                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:bg-violet-500/10 group-hover:text-violet-500 border border-slate-200 dark:border-slate-700 transition-colors">
-                      {cat.count} Challenges
-                    </span>
-                  </div>
-
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
-                      {cat.name}
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-                      {cat.description}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 mt-4 flex items-center justify-between text-xs font-semibold text-violet-600 dark:text-violet-400 group-hover:translate-x-1 transition-transform">
-                  <span>Solve Challenges</span>
-                  <ChevronRight size={14} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* SECTION 3: Top Placement Coding Questions & Patterns */}
-      {/* ========================================================================= */}
-      <div className="space-y-6 pt-4 border-t border-slate-200 dark:border-slate-800">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-gradient-to-r from-amber-500/10 via-violet-500/10 to-transparent p-5 rounded-2xl border border-amber-500/20">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black shadow-md shrink-0">
-              <Flame size={24} />
-            </div>
+      {user?.role !== 'student' && (
+        <div className="space-y-6 pt-4 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
-                  Top Placement Coding Questions & Patterns
-                </h2>
-                <span className="bg-amber-500/20 text-amber-600 dark:text-amber-400 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full border border-amber-500/30 uppercase">
-                  Subject Categorized
-                </span>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                Most frequently asked placement coding problem patterns categorized by subject (Amazon, TCS Digital, Infosys SP, Google, Microsoft)
-              </p>
+              <h2 className="text-xl font-extrabold text-slate-900 dark:text-white">General Practice</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Core foundational programming tracks and skill challenges</p>
             </div>
+            <button
+              onClick={() => navigate('/student/coding/category/all')}
+              className="text-xs font-bold text-violet-600 dark:text-violet-400 hover:text-violet-700 flex items-center gap-1 cursor-pointer"
+            >
+              View All General Problems <ArrowRight size={14} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-5">
+            {GENERAL_CATEGORIES.map((cat) => {
+              const IconComp = ICON_MAP[cat.icon] || Code;
+              return (
+                <div
+                  key={cat.id}
+                  onClick={() => navigate(`/student/coding/category/${encodeURIComponent(cat.name)}`)}
+                  className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-violet-500 dark:hover:border-violet-500 rounded-2xl p-5 shadow-xs hover:shadow-xl hover:-translate-y-1 transition-all duration-200 cursor-pointer group flex flex-col justify-between"
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 group-hover:bg-violet-600 group-hover:text-white transition-colors flex items-center justify-center shadow-xs">
+                        <IconComp size={20} />
+                      </div>
+                      <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 group-hover:bg-violet-500/10 group-hover:text-violet-500 border border-slate-200 dark:border-slate-700 transition-colors">
+                        {cat.count} Challenges
+                      </span>
+                    </div>
+
+                    <div>
+                      <h3 className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-violet-600 dark:group-hover:text-violet-400 transition-colors">
+                        {cat.name}
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2 leading-relaxed">
+                        {cat.description}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 mt-4 flex items-center justify-between text-xs font-semibold text-violet-600 dark:text-violet-400 group-hover:translate-x-1 transition-transform">
+                    <span>Solve Challenges</span>
+                    <ChevronRight size={14} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
+      )}
 
-        {/* Subject Tabs Navigation Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+      {/* ========================================================================= */}
+      {/* SECTION 3: Top Placement Coding Questions — visible to faculty/HOD only */}
+      {/* ========================================================================= */}
+      {user?.role !== 'student' && (
+        <div className="space-y-6 pt-4 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-gradient-to-r from-amber-500/10 via-violet-500/10 to-transparent p-5 rounded-2xl border border-amber-500/20">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-black shadow-md shrink-0">
+                <Flame size={24} />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
+                    Top Placement Coding Questions & Patterns
+                  </h2>
+                  <span className="bg-amber-500/20 text-amber-600 dark:text-amber-400 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full border border-amber-500/30 uppercase">
+                    Subject Categorized
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                  Most frequently asked placement coding problem patterns categorized by subject (Amazon, TCS Digital, Infosys SP, Google, Microsoft)
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Subject Tabs Navigation Bar */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
           {['ALL', ...Array.from(new Set(patterns.map(p => (p.subject || 'GENERAL').toUpperCase())))].map((subj) => {
             const count = subj === 'ALL' ? patterns.length : patterns.filter(p => (p.subject || '').toUpperCase() === subj).length;
             const isActive = selectedPatternSubject === subj;
@@ -674,6 +656,7 @@ export default function PracticeSkills() {
           ))}
         </div>
       </div>
+      )}
 
       {/* ========================================================================= */}
       {/* MODAL 1: Complete Profile Modal (One-time prompt for users with no scheme) */}

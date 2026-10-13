@@ -849,6 +849,39 @@ exports.getPlacementPatterns = async (req, res) => {
 // SCHEME-AWARE CURRICULUM & SUBJECT ENDPOINTS
 // =====================================================================
 
+// Helper to resolve student's department code to match curriculum CSV department (e.g. 'CSE')
+async function resolveStudentCsvDept(student) {
+  let dept = (student.department || '').trim();
+  if (!dept && student.dept) dept = student.dept.trim();
+
+  // 1. Try USN branch code extraction (e.g. 4PM24CE011 -> CE, 1VA21CS002 -> CS)
+  if (student.usn) {
+    const cleanUsn = student.usn.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const match = cleanUsn.match(/\d{2}([A-Z]{2,3})\d+/);
+    if (match) {
+      const usnBranch = match[1];
+      const [mapRows] = await db.query('SELECT dept FROM dept_map WHERE LOWER(usn_code) = LOWER(?)', [usnBranch]);
+      if (mapRows && mapRows.length) {
+        return mapRows[0].dept;
+      }
+    }
+  }
+
+  // 2. Check dept_map for direct match of department name or code
+  if (dept) {
+    const [mapRows] = await db.query('SELECT dept FROM dept_map WHERE LOWER(usn_code) = LOWER(?)', [dept]);
+    if (mapRows && mapRows.length) {
+      return mapRows[0].dept;
+    }
+    const dLower = dept.toLowerCase();
+    if (dLower.includes('computer science') || dLower.includes('computer engineering') || dLower === 'cse' || dLower === 'cs' || dLower === 'ce') {
+      return 'CSE';
+    }
+  }
+
+  return dept || 'CSE';
+}
+
 // GET /api/coding/schemes
 exports.getSchemes = async (req, res) => {
   try {
@@ -937,6 +970,7 @@ exports.getSubjects = async (req, res) => {
       }
 
       const includeActivity = req.query.include === 'activity';
+      const csvDept = await resolveStudentCsvDept(student);
 
       // Fetch subjects, including elective chosen status
       const [subjects] = await db.query(`
@@ -955,7 +989,7 @@ exports.getSubjects = async (req, res) => {
           AND s.type IN ('lab','elective'${includeActivity ? ",'activity'" : ''})
         GROUP BY s.id, s.code, s.name, s.type, s.semester, s.dept, sch.name, ss.subject_id
         ORDER BY s.semester ASC, s.type ASC, s.code ASC
-      `, [student.student_id, schemeId, studentDept, querySem]);
+      `, [student.student_id, schemeId, csvDept, querySem]);
 
       return res.json({
         missing_scheme: false,
@@ -1048,11 +1082,11 @@ exports.getSubjectPrograms = async (req, res) => {
       const student = sRows[0];
       const studentScheme = (student.scheme || '').replace(/\D/g, '');
       const subjectScheme = (subject.scheme_name || '').replace(/\D/g, '');
-      const studentDept = (student.department || '').trim().toLowerCase();
+      const studentCsvDept = (await resolveStudentCsvDept(student)).toLowerCase();
       const subjectDept = (subject.dept || '').trim().toLowerCase();
 
       // 403 if outside student's scheme or dept
-      if (studentScheme !== subjectScheme || (studentDept && subjectDept && studentDept !== subjectDept)) {
+      if (studentScheme !== subjectScheme || (studentCsvDept && subjectDept && studentCsvDept !== subjectDept)) {
         return res.status(403).json({
           error: 'Access forbidden: this subject is outside your VTU scheme or department'
         });
@@ -1085,7 +1119,7 @@ exports.chooseElective = async (req, res) => {
     const userId = req.user?.id;
 
     const [sRows] = await db.query(
-      'SELECT student_id, scheme, department, semester FROM students WHERE user_id = ?',
+      'SELECT student_id, scheme, department, semester, usn FROM students WHERE user_id = ?',
       [userId]
     );
     if (!sRows || !sRows.length) {
@@ -1112,10 +1146,10 @@ exports.chooseElective = async (req, res) => {
 
     const studentScheme = (student.scheme || '').replace(/\D/g, '');
     const subjectScheme = (subject.scheme_name || '').replace(/\D/g, '');
-    const studentDept = (student.department || '').trim().toLowerCase();
+    const studentCsvDept = (await resolveStudentCsvDept(student)).toLowerCase();
     const subjectDept = (subject.dept || '').trim().toLowerCase();
 
-    if (studentScheme !== subjectScheme || (studentDept && subjectDept && studentDept !== subjectDept)) {
+    if (studentScheme !== subjectScheme || (studentCsvDept && subjectDept && studentCsvDept !== subjectDept)) {
       return res.status(403).json({ error: 'Forbidden: elective is outside your scheme or department' });
     }
 

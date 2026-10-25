@@ -9,7 +9,26 @@ if (process.env.SUPABASE_URL && process.env.SUPABASE_KEY && !process.env.SUPABAS
 }
 
 // Build pg Pool connection config
-const connectionString = process.env.DATABASE_URL;
+// Helper to route around IPv6 unreachable errors on platforms like Render free tier
+function resolveSupabaseIpv4(connStr) {
+  if (!connStr) return connStr;
+  try {
+    const parsed = new URL(connStr);
+    const dbMatch = parsed.hostname.match(/^db\.([a-z0-9]+)\.supabase\.co$/i);
+    if (dbMatch) {
+      const projectRef = dbMatch[1];
+      parsed.hostname = 'aws-0-ap-northeast-1.pooler.supabase.com';
+      if (!parsed.username.includes(projectRef)) {
+        parsed.username = parsed.username + '.' + projectRef;
+      }
+      return parsed.toString();
+    }
+  } catch (e) {}
+  return connStr;
+}
+
+// Build pg Pool connection config
+const connectionString = resolveSupabaseIpv4(process.env.DATABASE_URL);
 let poolConfig = {};
 
 if (connectionString && !connectionString.includes('localhost:5432') && !connectionString.includes('YOUR-PASSWORD')) {

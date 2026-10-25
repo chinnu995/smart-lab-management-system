@@ -22,6 +22,7 @@ export default function Signup() {
   const [department, setDepartment] = useState('');
   const [phone, setPhone] = useState('');
   const [semester, setSemester] = useState('');
+  const [cycle, setCycle] = useState('P');
   const [scheme, setScheme] = useState('2022 Scheme');
   const [subject, setSubject] = useState('JAVA');
 
@@ -132,13 +133,33 @@ export default function Signup() {
           setLoading(false);
           return;
         }
+        let semNum = 1;
+        let cycleVal = null;
+        if (typeof semester === 'string') {
+          if (semester.startsWith('1')) {
+            semNum = 1;
+            cycleVal = semester.includes('C') ? 'C' : 'P';
+          } else if (semester.startsWith('2')) {
+            semNum = 2;
+            cycleVal = semester.includes('C') ? 'C' : 'P';
+          } else {
+            semNum = parseInt(semester) || 1;
+            cycleVal = null;
+          }
+        } else {
+          semNum = Number(semester) || 1;
+          if (semNum === 1 || semNum === 2) cycleVal = cycle || 'P';
+        }
+
         payload.usn = usn;
-        payload.semester = Number(semester) || undefined;
+        payload.semester = semNum;
+        payload.cycle = cycleVal;
         payload.scheme = scheme;
       }
-      if (activeRole === 'faculty') {
-        payload.emp_code = empCode;
+      if (activeRole === 'faculty' || activeRole === 'hod') {
+        payload.emp_code = empCode || (activeRole === 'hod' ? 'HOD001' : undefined);
         payload.scheme = scheme;
+        payload.semester = semester ? parseInt(semester, 10) : null;
         payload.subject = subject;
       }
 
@@ -609,7 +630,9 @@ export default function Signup() {
                         </div>
 
                         <div>
-                          <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Semester</label>
+                          <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                            Semester & Cycle
+                          </label>
                           <div className="relative">
                             <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 pointer-events-none">
                               <Hash size={14} />
@@ -618,14 +641,81 @@ export default function Signup() {
                               required
                               className={`input pl-10 bg-slate-50/50 dark:bg-slate-850/50 border-slate-200 dark:border-slate-850 transition-all ${currentRole.ringColor}`}
                               value={semester}
-                              onChange={e => setSemester(e.target.value)}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setSemester(val);
+                                if (val.includes('C')) setCycle('C');
+                                else if (val.includes('P')) setCycle('P');
+                              }}
                             >
                               <option value="">-- Select Semester --</option>
-                              {[1, 2, 3, 4, 5, 6, 7, 8].map(sem => (
-                                <option key={sem} value={sem}>{sem} Semester</option>
+                              <option value="1-P">1 Semester (P-Cycle)</option>
+                              <option value="1-C">1 Semester (C-Cycle)</option>
+                              <option value="2-P">2 Semester (P-Cycle)</option>
+                              <option value="2-C">2 Semester (C-Cycle)</option>
+                              {[3, 4, 5, 6, 7, 8].map(sem => (
+                                <option key={sem} value={String(sem)}>{sem} Semester</option>
                               ))}
                             </select>
                           </div>
+
+                          {/* 1st & 2nd Semester Cycle Quick Selector */}
+                          {(semester.startsWith('1') || semester.startsWith('2')) && (
+                            <div className="mt-2.5 p-3 rounded-xl bg-violet-50/70 dark:bg-violet-950/30 border border-violet-200/80 dark:border-violet-800/50">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="font-bold text-[11px] text-violet-700 dark:text-violet-300">
+                                  {semester.startsWith('2') ? '2nd Semester Cycle (VTU)' : '1st Semester Cycle (VTU)'}
+                                </span>
+                                <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                                  {semester.startsWith('2')
+                                    ? (cycle === 'P' ? 'Python Programming Lab Active (BPLCK205B)' : 'Chemistry Cycle (No Python Lab)')
+                                    : (cycle === 'P' ? 'POPC C Programming Lab Active' : 'Chemistry Cycle (No C Coding Lab)')}
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCycle('P');
+                                    setSemester(prev => (prev.startsWith('2') ? '2-P' : '1-P'));
+                                  }}
+                                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 border ${
+                                    cycle === 'P'
+                                      ? 'bg-violet-600 text-white border-violet-600 shadow-xs'
+                                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <span className="font-extrabold flex items-center gap-1.5">
+                                    <span className={`w-2 h-2 rounded-full ${cycle === 'P' ? 'bg-emerald-300' : 'bg-slate-400'}`}></span>
+                                    P-Cycle (Physics)
+                                  </span>
+                                  <span className="text-[10px] opacity-80">
+                                    {semester.startsWith('2') ? 'Includes Python Programming Lab' : 'Includes C Programming Lab'}
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCycle('C');
+                                    setSemester(prev => (prev.startsWith('2') ? '2-C' : '1-C'));
+                                  }}
+                                  className={`py-2 px-2.5 rounded-lg text-xs font-bold transition flex flex-col items-center justify-center gap-0.5 border ${
+                                    cycle === 'C'
+                                      ? 'bg-violet-600 text-white border-violet-600 shadow-xs'
+                                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  <span className="font-extrabold flex items-center gap-1.5">
+                                    <span className={`w-2 h-2 rounded-full ${cycle === 'C' ? 'bg-amber-300' : 'bg-slate-400'}`}></span>
+                                    C-Cycle (Chemistry)
+                                  </span>
+                                  <span className="text-[10px] opacity-80">
+                                    {semester.startsWith('2') ? 'Chemistry Cycle (No Python Lab)' : 'Chemistry Cycle (No C Lab)'}
+                                  </span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div>
@@ -651,8 +741,8 @@ export default function Signup() {
                       </>
                     )}
 
-                    {/* Employee Code & Assigned Subject - Faculty only */}
-                    {activeRole === 'faculty' && (
+                    {/* Employee Code & Assigned Subject - Faculty & HOD */}
+                    {(activeRole === 'faculty' || activeRole === 'hod') && (
                       <>
                         <div>
                           <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Employee Code</label>
@@ -693,6 +783,28 @@ export default function Signup() {
 
                         <div>
                           <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
+                            Semester
+                          </label>
+                          <div className="relative">
+                            <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 pointer-events-none">
+                              <Hash size={14} />
+                            </span>
+                            <select
+                              required
+                              className={`input pl-10 bg-slate-50/50 dark:bg-slate-850/50 border-slate-200 dark:border-slate-850 transition-all ${currentRole.ringColor}`}
+                              value={semester}
+                              onChange={e => setSemester(e.target.value)}
+                            >
+                              <option value="">-- Select Semester --</option>
+                              {[1, 2, 3, 4, 5, 6, 7, 8].map(s => (
+                                <option key={s} value={String(s)}>{s} Semester</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">
                             Assigned Subject
                           </label>
                           <div className="relative">
@@ -705,16 +817,29 @@ export default function Signup() {
                               value={subject}
                               onChange={e => setSubject(e.target.value)}
                             >
-                              <option value="Java Lab">Java Lab</option>
-                              <option value="DBMS Lab">DBMS Lab</option>
-                              <option value="Python Lab">Python Lab</option>
-                              <option value="Data Structures Lab">Data Structures Lab</option>
-                              <option value="ADA Lab">ADA Lab (Analysis & Design of Algorithms)</option>
-                              <option value="Operating Systems Lab">Operating Systems Lab</option>
-                              <option value="AI & Machine Learning Lab">AI & Machine Learning Lab</option>
+                              {/* VTU CS Allied Lab Subjects — 2022 & 2025 Scheme */}
+                              {/* Sem 1 & 2 */}
                               <option value="C Programming Lab">C Programming Lab</option>
-                              <option value="MongoDB Lab">MongoDB Lab</option>
+                              <option value="Introduction to Python Programming">Introduction to Python Programming</option>
+                              {/* Sem 3 */}
+                              <option value="Data Structures Lab">Data Structures Lab</option>
+                              <option value="Operating Systems Lab">Operating Systems Lab</option>
+                              <option value="Java Lab">Java Lab (OOP with Java)</option>
+                              <option value="C++ Lab">C++ Lab (OOP with C++)</option>
+                              <option value="Digital Design & Computer Organization Lab">Digital Design & Computer Organization Lab</option>
+                              <option value="Git & Version Control Lab">Git & Version Control Lab</option>
+                              <option value="Data Visualization with Python Lab">Data Visualization with Python Lab</option>
+                              {/* Sem 4 */}
+                              <option value="ADA Lab">ADA Lab (Analysis & Design of Algorithms)</option>
+                              <option value="DBMS Lab">DBMS Lab</option>
+                              {/* Sem 5 */}
                               <option value="Computer Networks Lab">Computer Networks Lab</option>
+                              <option value="IoT Lab">IoT Lab</option>
+                              {/* Allied / General */}
+                              <option value="AI & Machine Learning Lab">AI & Machine Learning Lab</option>
+                              <option value="MongoDB Lab">MongoDB Lab</option>
+                              <option value="Python Lab">Python Lab</option>
+                              <option value="Web Technologies Lab">Web Technologies Lab</option>
                             </select>
                           </div>
                         </div>

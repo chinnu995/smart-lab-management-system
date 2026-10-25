@@ -294,6 +294,8 @@ async function verifyConnectionWithRetry({ maxAttempts = 5, initialDelayMs = 200
         CREATE INDEX IF NOT EXISTS idx_lab_programs_subject ON lab_programs(subject_id);
         CREATE INDEX IF NOT EXISTS idx_student_subjects_student ON student_subjects(student_id);
         ALTER TABLE students ADD COLUMN IF NOT EXISTS scheme VARCHAR(50);
+        ALTER TABLE students ADD COLUMN IF NOT EXISTS cycle VARCHAR(20);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS cycle VARCHAR(20);
       `);
       client.release();
       return;

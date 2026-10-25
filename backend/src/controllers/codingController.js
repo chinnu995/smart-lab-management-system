@@ -2,6 +2,7 @@ const db = require('../config/db');
 const { executeCode, runTestCases } = require('../services/codeRunner');
 const { generateTestQuestions } = require('../services/aiProvider');
 const { PLACEMENT_PATTERNS } = require('../data/placementPatterns');
+const { enrichProblem } = require('../utils/problemSpecEnricher');
 
 const SKILL_CATEGORIES = [
   { id: 'dsa', name: 'DSA', icon: 'Binary', count: 10, description: 'Data Structures & Algorithms, Trees, Graphs & Dynamic Programming' },
@@ -364,22 +365,25 @@ exports.getProblems = async (req, res) => {
   }
 };
 
-function ensure5Cases(cases = []) {
+function ensure5Cases(cases = [], problem = null) {
   const list = [...(Array.isArray(cases) ? cases : [])];
   if (list.length >= 5) return list.slice(0, 5);
 
-  const defaults = [
-    { input: '10 20', output: '30', explanation: 'Test case 1 sample execution' },
-    { input: '5 15', output: '20', explanation: 'Test case 2 sample execution' },
-    { input: '0 0', output: '0', explanation: 'Test case 3 boundary check' },
-    { input: '-5 5', output: '0', explanation: 'Test case 4 negative numbers' },
-    { input: '100 200', output: '300', explanation: 'Test case 5 large input values' }
+  const enriched = problem ? enrichProblem(problem) : null;
+  const enrichedDefaults = enriched?.sample_cases || [];
+
+  const defaults = enrichedDefaults.length >= 5 ? enrichedDefaults : [
+    { input: '1', output: 'Sample Output 1', explanation: 'Sample test case 1 evaluation' },
+    { input: '2', output: 'Sample Output 2', explanation: 'Sample test case 2 evaluation' },
+    { input: '3', output: 'Sample Output 3', explanation: 'Sample test case 3 evaluation' },
+    { input: '4', output: 'Sample Output 4', explanation: 'Sample test case 4 evaluation' },
+    { input: '5', output: 'Sample Output 5', explanation: 'Sample test case 5 evaluation' }
   ];
 
   while (list.length < 5) {
     const fallback = defaults[list.length] || {
-      input: `Test Case ${list.length + 1} Input`,
-      output: `Test Case ${list.length + 1} Output`,
+      input: `Sample Input ${list.length + 1}`,
+      output: `Sample Output ${list.length + 1}`,
       explanation: `Test case ${list.length + 1} evaluation`
     };
     list.push(fallback);
@@ -404,7 +408,7 @@ exports.getProblemDetails = async (req, res) => {
       let pRows = [];
       if (isNum) {
         const [resP] = await db.query(`
-          SELECT lp.*, s.name as subject_name
+          SELECT lp.*, s.name as subject_name, s.code as subject_code
           FROM lab_programs lp
           JOIN subjects s ON lp.subject_id = s.id
           WHERE lp.id = ?
@@ -413,7 +417,7 @@ exports.getProblemDetails = async (req, res) => {
       } else if (String(id).startsWith('program-')) {
         const progId = parseInt(String(id).replace('program-', ''));
         const [resP] = await db.query(`
-          SELECT lp.*, s.name as subject_name
+          SELECT lp.*, s.name as subject_name, s.code as subject_code
           FROM lab_programs lp
           JOIN subjects s ON lp.subject_id = s.id
           WHERE lp.id = ?
@@ -431,16 +435,23 @@ exports.getProblemDetails = async (req, res) => {
           category: lp.subject_name,
           week_number: lp.program_no,
           description: lp.description,
-          input_format: 'Standard Input (STDIN)',
-          output_format: 'Standard Output (STDOUT)',
-          constraints: 'Execution Time < 5s',
+          input_format: lp.input_format || null,
+          output_format: lp.output_format || null,
+          constraints: lp.constraints || null,
           sample_cases: lp.test_cases,
-          starter_code: lp.starter_code
+          starter_code: lp.starter_code,
+          language: lp.language,
+          subject_code: lp.subject_code,
+          subject_name: lp.subject_name
         };
       }
     }
 
     if (!problem) return res.status(404).json({ error: 'Problem not found' });
+
+    // Enrich problem with academic description, input/output format, constraints, and test cases
+    problem = enrichProblem(problem);
+
     const weekNum = problem.week_number || 1;
     
     // Check if student has already submitted this coding challenge
@@ -467,7 +478,7 @@ exports.getProblemDetails = async (req, res) => {
     try { sampleCases = typeof problem.sample_cases === 'string' ? JSON.parse(problem.sample_cases) : problem.sample_cases; } catch(e){}
     try { starterCode = typeof problem.starter_code === 'string' ? JSON.parse(problem.starter_code) : problem.starter_code; } catch(e){}
 
-    sampleCases = ensure5Cases(sampleCases);
+    sampleCases = ensure5Cases(sampleCases, problem);
 
     // Do NOT send hidden_cases to client
     res.json({
@@ -515,13 +526,30 @@ exports.runCode = async (req, res) => {
     }
 
     // Run against 5 sample cases
-    const [pRows] = await db.query('SELECT sample_cases FROM coding_challenges WHERE problem_id = ?', [problemId]);
-    let sampleCases = [];
-    if (pRows.length) {
-      try { sampleCases = typeof pRows[0].sample_cases === 'string' ? JSON.parse(pRows[0].sample_cases) : pRows[0].sample_cases; } catch(e){}
+    let [pRows] = await db.query('SELECT * FROM coding_challenges WHERE problem_id = ?', [problemId]);
+    let problem = pRows[0];
+    if (!problem) {
+      const [lpRows] = await db.query(`
+        SELECT lp.*, s.name as subject_name, s.code as subject_code
+        FROM lab_programs lp
+        JOIN subjects s ON lp.subject_id = s.id
+        WHERE lp.id = ?
+      `, [problemId]);
+      if (lpRows.length) {
+        problem = lpRows[0];
+      }
     }
 
-    sampleCases = ensure5Cases(sampleCases);
+    if (problem) {
+      problem = enrichProblem(problem);
+    }
+
+    let sampleCases = [];
+    if (problem) {
+      try { sampleCases = typeof problem.sample_cases === 'string' ? JSON.parse(problem.sample_cases) : problem.sample_cases; } catch(e){}
+    }
+
+    sampleCases = ensure5Cases(sampleCases, problem);
 
     const evaluation = await runTestCases(language, code, sampleCases);
     res.json({
@@ -550,15 +578,29 @@ exports.submitCode = async (req, res) => {
     const studentId = sRows[0].student_id;
 
     // Fetch testcases & ensure 5 testcases
-    const [pRows] = await db.query('SELECT sample_cases, hidden_cases FROM coding_challenges WHERE problem_id = ?', [problemId]);
-    if (!pRows.length) return res.status(404).json({ error: 'Problem not found' });
+    let [pRows] = await db.query('SELECT * FROM coding_challenges WHERE problem_id = ?', [problemId]);
+    let problem = pRows[0];
+    if (!problem) {
+      const [lpRows] = await db.query(`
+        SELECT lp.*, s.name as subject_name, s.code as subject_code
+        FROM lab_programs lp
+        JOIN subjects s ON lp.subject_id = s.id
+        WHERE lp.id = ?
+      `, [problemId]);
+      if (lpRows.length) {
+        problem = lpRows[0];
+      }
+    }
+    if (!problem) return res.status(404).json({ error: 'Problem not found' });
+
+    problem = enrichProblem(problem);
 
     let sampleCases = [];
     let hiddenCases = [];
-    try { sampleCases = typeof pRows[0].sample_cases === 'string' ? JSON.parse(pRows[0].sample_cases) : pRows[0].sample_cases; } catch(e){}
-    try { hiddenCases = typeof pRows[0].hidden_cases === 'string' ? JSON.parse(pRows[0].hidden_cases) : pRows[0].hidden_cases; } catch(e){}
+    try { sampleCases = typeof problem.sample_cases === 'string' ? JSON.parse(problem.sample_cases) : problem.sample_cases; } catch(e){}
+    try { hiddenCases = typeof problem.hidden_cases === 'string' ? JSON.parse(problem.hidden_cases) : problem.hidden_cases; } catch(e){}
 
-    const allCases = ensure5Cases([...sampleCases, ...hiddenCases]);
+    const allCases = ensure5Cases([...sampleCases, ...(hiddenCases || [])], problem);
     const evaluation = await runTestCases(language, code, allCases);
 
     let status = 'Accepted';
@@ -854,7 +896,7 @@ async function resolveStudentCsvDept(student) {
   let dept = (student.department || '').trim();
   if (!dept && student.dept) dept = student.dept.trim();
 
-  // 1. Try USN branch code extraction (e.g. 4PM24CE011 -> CE, 1VA21CS002 -> CS)
+  // 1. Try USN branch code extraction (e.g. 4PM24IS018 -> IS, 4PM24CE011 -> CE, 1VA21CS002 -> CS)
   if (student.usn) {
     const cleanUsn = student.usn.toUpperCase().replace(/[^A-Z0-9]/g, '');
     const match = cleanUsn.match(/\d{2}([A-Z]{2,3})\d+/);
@@ -863,6 +905,9 @@ async function resolveStudentCsvDept(student) {
       const [mapRows] = await db.query('SELECT dept FROM dept_map WHERE LOWER(usn_code) = LOWER(?)', [usnBranch]);
       if (mapRows && mapRows.length) {
         return mapRows[0].dept;
+      }
+      if (['CS', 'IS', 'ISE', 'CE', 'AI', 'AIML', 'DS', 'CD', 'CY', 'AD', 'AM', 'AL', 'CO', 'CB', 'CG', 'CI', 'SE', 'CSDS', 'CSD', 'CSBS', 'AIDS'].includes(usnBranch)) {
+        return 'CSE';
       }
     }
   }
@@ -874,7 +919,17 @@ async function resolveStudentCsvDept(student) {
       return mapRows[0].dept;
     }
     const dLower = dept.toLowerCase();
-    if (dLower.includes('computer science') || dLower.includes('computer engineering') || dLower === 'cse' || dLower === 'cs' || dLower === 'ce') {
+    // Comprehensive CS Allied Department check: CSE, ISE/IS, AIML/AI, CSDS/DS, CSD/CD, Cyber Security/CY, Computer Engineering/CE, AIDS, etc.
+    if (
+      dLower.includes('computer') ||
+      dLower.includes('information') ||
+      dLower.includes('intelligence') ||
+      dLower.includes('data science') ||
+      dLower.includes('cyber') ||
+      dLower.includes('design') ||
+      dLower.includes('software') ||
+      ['cse', 'cs', 'ce', 'ise', 'is', 'ai', 'aiml', 'ds', 'cd', 'cy', 'ad', 'am', 'al', 'co', 'cb', 'cg', 'ci', 'se', 'csbs', 'aids', 'csds'].includes(dLower)
+    ) {
       return 'CSE';
     }
   }
@@ -894,7 +949,7 @@ exports.getSchemes = async (req, res) => {
 };
 
 // GET /api/coding/subjects?semester=N&include=activity
-// - Students: scheme/dept/semester always come from DB (never trusted from query params)
+// - Students: scheme/dept from DB, semester defaults to enrolled semester or selected 1-8
 // - Faculty/HOD: accept ?scheme= ?dept= ?semester= filters
 exports.getSubjects = async (req, res) => {
   try {
@@ -904,7 +959,7 @@ exports.getSubjects = async (req, res) => {
     if (userRole === 'student') {
       // ── Always read credentials from DB ──────────────────────────────────
       const [sRows] = await db.query(
-        'SELECT student_id, usn, department, semester, scheme FROM students WHERE user_id = ?',
+        'SELECT student_id, usn, department, semester, scheme, cycle FROM students WHERE user_id = ?',
         [userId]
       );
       if (!sRows || !sRows.length) {
@@ -915,6 +970,8 @@ exports.getSubjects = async (req, res) => {
       const studentDept = (student.department || '').trim();
       const studentSem  = parseInt(student.semester) || 1;
       const studentScheme = (student.scheme || '').trim();
+      const rawCycle = (student.cycle || '').toUpperCase().trim();
+      const studentCycle = rawCycle.includes('P') ? 'P' : rawCycle.includes('C') ? 'C' : null;
 
       // Handle no scheme set — return prompt
       if (!studentScheme) {
@@ -939,12 +996,27 @@ exports.getSubjects = async (req, res) => {
         }
       }
 
-      // If not resolved from users.scheme_id, resolve canonical scheme id from students.scheme
-      if (!schemeId) {
-        const schemeYear = studentScheme.replace(/\D/g, '');
+      const rawScheme = (studentScheme || schemeName || '').trim();
+      const schemeYear = rawScheme.replace(/\D/g, '') || '2025';
+
+      // Always resolve schemeId to the canonical scheme where subjects actually live for this year
+      const [schSubjRows] = await db.query(
+        `SELECT s.scheme_id, sch.name 
+         FROM subjects s 
+         JOIN schemes sch ON s.scheme_id = sch.id 
+         WHERE sch.name = ? OR sch.name LIKE ? OR sch.year_label = ?
+         ORDER BY CASE WHEN sch.name = ? THEN 0 ELSE 1 END, s.scheme_id DESC 
+         LIMIT 1`,
+        [schemeYear, `${schemeYear}%`, schemeYear, schemeYear]
+      );
+
+      if (schSubjRows && schSubjRows.length) {
+        schemeId = schSubjRows[0].scheme_id;
+        schemeName = schSubjRows[0].name;
+      } else if (!schemeId) {
         const [schRows] = await db.query(
-          `SELECT id, name FROM schemes WHERE name = ? OR name LIKE ? ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, id DESC LIMIT 1`,
-          [schemeYear, `${schemeYear}%`, schemeYear]
+          `SELECT id, name FROM schemes WHERE name = ? OR name LIKE ? OR year_label = ? ORDER BY CASE WHEN name = ? THEN 0 ELSE 1 END, id DESC LIMIT 1`,
+          [schemeYear, `${schemeYear}%`, schemeYear, schemeYear]
         );
         if (schRows && schRows.length) {
           schemeId = schRows[0].id;
@@ -966,6 +1038,39 @@ exports.getSubjects = async (req, res) => {
       const includeActivity = req.query.include === 'activity';
       const csvDept = await resolveStudentCsvDept(student);
 
+      // Cycle-aware semester logic for 1st Year (Semester 1 & 2):
+      // Sem 1:
+      //   P-Cycle: Principles of Programming Using C (BPOPK103 / 1BPOPL107)
+      //   C-Cycle: Chemistry Cycle (no programming lab)
+      // Sem 2:
+      //   P-Cycle: Introduction to Python Programming (BPLCK205B) / C Lab (1BPOPL207 in 2025)
+      //   C-Cycle: Chemistry Cycle (no programming lab)
+      let semCondition = 's.semester = ?';
+      let semParam = querySem;
+
+      if ((studentSem === 1 || studentSem === 2) && studentCycle) {
+        if (studentCycle === 'P') {
+          if (studentSem === 1) {
+            // 1st Sem P-Cycle: C Programming
+            if (schemeYear === '2022') {
+              semCondition = "(s.code = 'BPOPK103' AND s.semester = ?)";
+            } else {
+              semCondition = "(s.code = '1BPOPL107' AND s.semester = ?)";
+            }
+          } else if (studentSem === 2) {
+            // 2nd Sem P-Cycle: Python Programming Lab (BPLCK205B in 2022 Scheme)
+            if (schemeYear === '2022') {
+              semCondition = "(s.code = 'BPLCK205B' AND s.semester = ?)";
+            } else {
+              semCondition = "((s.code = 'BPLCK205B' OR s.code = '1BPOPL207') AND s.semester = ?)";
+            }
+          }
+        } else if (studentCycle === 'C') {
+          // C-Cycle in 1st or 2nd semester: Chemistry cycle (no programming lab)
+          semCondition = "(s.id = -999 AND s.semester = ?)";
+        }
+      }
+
       // Fetch subjects, including elective chosen status
       const [subjects] = await db.query(`
         SELECT
@@ -977,17 +1082,19 @@ exports.getSubjects = async (req, res) => {
         JOIN schemes sch ON sch.id = s.scheme_id
         LEFT JOIN lab_programs lp ON lp.subject_id = s.id
         LEFT JOIN student_subjects ss ON ss.subject_id = s.id AND ss.student_id = ?
-        WHERE s.scheme_id = ?
+        WHERE (s.scheme_id = ? OR s.scheme_id IN (
+          SELECT id FROM schemes WHERE name = ? OR name LIKE ? OR year_label = ?
+        ))
           AND LOWER(s.dept) = LOWER(?)
-          AND s.semester = ?
+          AND ${semCondition}
           AND s.type IN ('lab','elective'${includeActivity ? ",'activity'" : ''})
         GROUP BY s.id, s.code, s.name, s.type, s.semester, s.dept, sch.name, ss.subject_id
         ORDER BY s.semester ASC, s.type ASC, s.code ASC
-      `, [student.student_id, schemeId, csvDept, querySem]);
+      `, [student.student_id, schemeId, schemeYear, `${schemeYear}%`, schemeYear, csvDept, semParam]);
 
       return res.json({
         missing_scheme: false,
-        studentInfo: { scheme: schemeName, department: studentDept, semester: studentSem, usn: student.usn },
+        studentInfo: { scheme: schemeName, department: studentDept, semester: studentSem, cycle: studentCycle, usn: student.usn },
         subjects: subjects || []
       });
     }
@@ -1087,9 +1194,9 @@ exports.getSubjectPrograms = async (req, res) => {
       }
     }
 
-    // Return program_no, title, description, source, runnable, language (NO test_cases)
+    // Return id, program_no, title, description, source, runnable, language (NO test_cases)
     const [programs] = await db.query(`
-      SELECT program_no, title, description, source, runnable, language
+      SELECT id, program_no, title, description, source, runnable, language
       FROM lab_programs
       WHERE subject_id = ?
       ORDER BY program_no ASC

@@ -241,9 +241,23 @@ exports.ask = async (req, res) => {
     );
     liveContext.overallToppers = topList;
 
-    const [anns] = await db.execute(
-      `SELECT title, content, category, created_at FROM announcements ORDER BY created_at DESC LIMIT 5`
-    );
+    let annQuery = `SELECT title, content, category, created_at FROM announcements WHERE created_at >= NOW() - INTERVAL '12 hours'`;
+    const annParams = [];
+    if (user?.role === 'student') {
+      const [stu] = await db.query(
+        "SELECT COALESCE(s.semester, u.semester) AS semester FROM users u LEFT JOIN students s ON s.user_id = u.user_id WHERE u.user_id = ?",
+        [user.id]
+      ).catch(() => [[]]);
+      const sSem = stu?.[0]?.semester;
+      if (sSem) {
+        annQuery += " AND (target_semester IS NULL OR target_semester = ?)";
+        annParams.push(sSem);
+      } else {
+        annQuery += " AND target_semester IS NULL";
+      }
+    }
+    annQuery += ` ORDER BY is_pinned DESC, created_at DESC LIMIT 5`;
+    const [anns] = await db.query(annQuery, annParams);
     liveContext.recentAnnouncements = anns;
 
   } catch (dbErr) {

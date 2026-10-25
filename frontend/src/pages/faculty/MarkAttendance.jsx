@@ -527,16 +527,29 @@ export default function MarkAttendance() {
                         ⭐ {user.subject} (Your Assigned Subject)
                       </option>
                     )}
-                    <option value="Java Lab">Java Lab</option>
-                    <option value="DBMS Lab">DBMS Lab</option>
-                    <option value="Python Lab">Python Lab</option>
-                    <option value="Data Structures Lab">Data Structures Lab</option>
-                    <option value="ADA Lab">ADA Lab (Analysis & Design of Algorithms)</option>
-                    <option value="Operating Systems Lab">Operating Systems Lab</option>
-                    <option value="AI & Machine Learning Lab">AI & Machine Learning Lab</option>
+                    {/* VTU CS Allied Lab Subjects (2022 & 2025 Scheme) */}
+                    {/* --- Sem 1 & 2 --- */}
                     <option value="C Programming Lab">C Programming Lab</option>
-                    <option value="MongoDB Lab">MongoDB Lab</option>
+                    <option value="Python Lab">Python Lab</option>
+                    <option value="Introduction to Python Programming">Introduction to Python Programming</option>
+                    {/* --- Sem 3 --- */}
+                    <option value="Data Structures Lab">Data Structures Lab</option>
+                    <option value="Operating Systems Lab">Operating Systems Lab</option>
+                    <option value="Java Lab">Java Lab (OOP with Java)</option>
+                    <option value="C++ Lab">C++ Lab (OOP with C++)</option>
+                    <option value="Digital Design & Computer Organization Lab">Digital Design & Computer Organization Lab</option>
+                    <option value="Git & Version Control Lab">Git & Version Control Lab</option>
+                    <option value="Data Visualization with Python Lab">Data Visualization with Python Lab</option>
+                    {/* --- Sem 4 --- */}
+                    <option value="ADA Lab">ADA Lab (Analysis & Design of Algorithms)</option>
+                    <option value="DBMS Lab">DBMS Lab</option>
+                    {/* --- Sem 5 --- */}
                     <option value="Computer Networks Lab">Computer Networks Lab</option>
+                    <option value="IoT Lab">IoT Lab</option>
+                    {/* --- Allied / General --- */}
+                    <option value="AI & Machine Learning Lab">AI & Machine Learning Lab</option>
+                    <option value="MongoDB Lab">MongoDB Lab</option>
+                    <option value="Web Technologies Lab">Web Technologies Lab</option>
                   </select>
                 </div>
 

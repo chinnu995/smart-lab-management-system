@@ -46,6 +46,7 @@ export default function SubjectPrograms() {
     const title = prog.title || '';
     const isOpenEnded = title.trim().toLowerCase().startsWith('part b:');
     const isComplex = title.trim().toLowerCase().startsWith('complex (not for cie)');
+    const lang = prog.language || 'python';
 
     return (
       <div className="flex flex-wrap items-center gap-1.5 mt-1">
@@ -59,20 +60,9 @@ export default function SubjectPrograms() {
             Complex
           </span>
         )}
-        {!prog.runnable ? (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
-            Practice only: runs outside the IDE
-          </span>
-        ) : (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30">
-            Tests coming soon
-          </span>
-        )}
-        {prog.language && (
-          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 uppercase">
-            {prog.language}
-          </span>
-        )}
+        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 uppercase">
+          {lang}
+        </span>
       </div>
     );
   };
@@ -164,7 +154,7 @@ export default function SubjectPrograms() {
               <div className="space-y-3">
                 {programs.map((prog) => (
                   <div
-                    key={prog.program_no}
+                    key={prog.id || prog.program_no}
                     className="bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-xs hover:border-violet-500/50 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
                   >
                     <div className="space-y-2 flex-1">
@@ -196,7 +186,7 @@ export default function SubjectPrograms() {
                     <div className="shrink-0 flex items-center gap-2 md:self-center pl-9 md:pl-0">
                       {prog.runnable ? (
                         <button
-                          onClick={() => navigate(`/student/coding/problem/program-${prog.program_no}`)}
+                          onClick={() => navigate(`/student/coding/problem/program-${prog.id || prog.program_no}`)}
                           className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs shadow-sm cursor-pointer transition flex items-center gap-1.5"
                         >
                           <Play size={13} />

@@ -36,6 +36,7 @@ export default function Profile() {
   const [department, setDepartment] = useState('Computer Science & Engineering');
   const [academicYear, setAcademicYear] = useState('1st Year');
   const [semester, setSemester] = useState('1');
+  const [cycle, setCycle] = useState('P');
   const [scheme, setScheme] = useState('');
   const [profileImage, setProfileImage] = useState(null);
   
@@ -56,6 +57,7 @@ export default function Profile() {
         setDepartment(data.department || user?.department || 'Computer Science & Engineering');
         setProfileImage(data.profile_image || user?.profile_image || null);
         setScheme(data.scheme || user?.scheme || '');
+        setCycle(data.cycle || user?.cycle || 'P');
         
         // Map semester to academic year
         const sem = data.semester ? parseInt(data.semester) : 1;
@@ -72,7 +74,8 @@ export default function Profile() {
           phone: data.phone,
           department: data.department || user?.department,
           profile_image: data.profile_image || user?.profile_image,
-          semester: data.semester
+          semester: data.semester,
+          cycle: data.cycle || user?.cycle || 'P'
         };
         setUser(updated);
         localStorage.setItem('user', JSON.stringify(updated));
@@ -193,7 +196,8 @@ export default function Profile() {
         ...(user?.role === 'student' && {
           academic_year: academicYear,
           semester: semester,
-          scheme: scheme
+          scheme: scheme,
+          cycle: cycle
         }),
         ...(changePassword && {
           current_password: currentPassword,
@@ -213,7 +217,8 @@ export default function Profile() {
         department: data.user.department || department,
         profile_image: data.user.profile_image || profileImage,
         semester: data.user.semester || semester,
-        scheme: data.user.scheme || scheme
+        scheme: data.user.scheme || scheme,
+        cycle: data.user.cycle || cycle
       };
       setUser(updatedUser);
       localStorage.setItem('user', JSON.stringify(updatedUser));
@@ -457,22 +462,107 @@ export default function Profile() {
                   Academic Year / Semester
                 </label>
                 {isEditing ? (
-                  <div className="relative">
-                    <Calendar size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <select
-                      value={academicYear}
-                      onChange={handleAcademicYearChange}
-                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-primary focus:outline-none transition-all"
-                    >
-                      <option value="1st Year">1st Year (Semester 1 & 2)</option>
-                      <option value="2nd Year">2nd Year (Semester 3 & 4)</option>
-                      <option value="3rd Year">3rd Year (Semester 5 & 6)</option>
-                      <option value="4th Year">4th Year (Semester 7 & 8)</option>
-                    </select>
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="relative">
+                        <Calendar size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <select
+                          value={academicYear}
+                          onChange={handleAcademicYearChange}
+                          className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-primary focus:outline-none transition-all"
+                        >
+                          <option value="1st Year">1st Year</option>
+                          <option value="2nd Year">2nd Year</option>
+                          <option value="3rd Year">3rd Year</option>
+                          <option value="4th Year">4th Year</option>
+                        </select>
+                      </div>
+
+                      <div className="relative">
+                        <select
+                          value={semester}
+                          onChange={(e) => setSemester(e.target.value)}
+                          className="w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:ring-2 focus:ring-primary focus:outline-none transition-all"
+                        >
+                          {academicYear === '1st Year' && (
+                            <>
+                              <option value="1">1st Semester</option>
+                              <option value="2">2nd Semester</option>
+                            </>
+                          )}
+                          {academicYear === '2nd Year' && (
+                            <>
+                              <option value="3">3rd Semester</option>
+                              <option value="4">4th Semester</option>
+                            </>
+                          )}
+                          {academicYear === '3rd Year' && (
+                            <>
+                              <option value="5">5th Semester</option>
+                              <option value="6">6th Semester</option>
+                            </>
+                          )}
+                          {academicYear === '4th Year' && (
+                            <>
+                              <option value="7">7th Semester</option>
+                              <option value="8">8th Semester</option>
+                            </>
+                          )}
+                        </select>
+                      </div>
+                    </div>
+
+                    {(semester === '1' || semester === '2') && (
+                      <div className="p-3 rounded-xl bg-violet-50/70 dark:bg-violet-950/30 border border-violet-200/80 dark:border-violet-800/40 text-xs">
+                        <label className="block text-[11px] font-bold text-violet-700 dark:text-violet-300 uppercase tracking-wider mb-1.5">
+                          {semester === '1' ? '1st Semester' : '2nd Semester'} Cycle (VTU)
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setCycle('P')}
+                            className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 border ${
+                              cycle === 'P'
+                                ? 'bg-violet-600 text-white border-violet-600 shadow-xs'
+                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                            P-Cycle (Physics)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCycle('C')}
+                            className={`py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 border ${
+                              cycle === 'C'
+                                ? 'bg-violet-600 text-white border-violet-600 shadow-xs'
+                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                            C-Cycle (Chemistry)
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1.5">
+                          {cycle === 'P'
+                            ? (semester === '2' ? '✓ P-Cycle has active Python Programming Lab programs' : '✓ P-Cycle has active C Programming Lab programs')
+                            : (semester === '2' ? 'ℹ️ C-Cycle does not have Python Programming Lab' : 'ℹ️ C-Cycle does not have C Programming Lab')}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-700/60 text-slate-800 dark:text-slate-200 text-sm font-medium">
                     <Calendar size={18} className="text-slate-400" /> {academicYear} (Semester {semester})
+                    {(semester === '1' || semester === '2') && (
+                      <span className={`ml-auto text-xs px-2.5 py-0.5 rounded-full font-bold border ${
+                        cycle === 'P'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                          : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                      }`}>
+                        {cycle === 'P' ? '⚡ P-Cycle (Physics)' : '🧪 C-Cycle (Chemistry)'}
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

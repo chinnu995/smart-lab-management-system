@@ -7,10 +7,13 @@ import {
   XCircle, Sparkles, Brain, Lightbulb, Target, ArrowLeft, RefreshCw, BookOpen, Check, X,
   ShieldAlert, Maximize2, Shield
 } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext.jsx';
 
 export default function TakeTest() {
   const { testId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isFaculty = user?.role === 'faculty' || user?.role === 'hod';
 
   const [test, setTest] = useState(null);
   const [questions, setQuestions] = useState([]);
@@ -49,21 +52,21 @@ export default function TakeTest() {
           setResult(resResult.data);
         } catch (resErr) {
           toast.error('Failed to load test details');
-          navigate('/student/tests');
+          navigate(isFaculty ? '/faculty/tests' : '/student/tests');
         }
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, [testId, navigate]);
+  }, [testId, navigate, isFaculty]);
 
-  // Attempt auto-fullscreen when test is loaded
+  // Attempt auto-fullscreen when test is loaded (students only)
   useEffect(() => {
-    if (test && !result) {
+    if (test && !result && !isFaculty) {
       requestFullscreen();
     }
-  }, [test, result]);
+  }, [test, result, isFaculty]);
 
   // Timer
   useEffect(() => {
@@ -101,9 +104,9 @@ export default function TakeTest() {
     }
   }, [answers, testId, submitting, result]);
 
-  // Proctoring & Tab Switch Listener
+  // Proctoring & Tab Switch Listener (Bypassed for Faculty Preview)
   useEffect(() => {
-    if (!test || result) return;
+    if (!test || result || isFaculty) return;
 
     let isSubmittingAuto = false;
 
@@ -474,10 +477,10 @@ export default function TakeTest() {
         {/* Back Button */}
         <div className="flex justify-center pt-4">
           <button
-            onClick={() => navigate('/student/tests')}
+            onClick={() => navigate(isFaculty ? '/faculty/tests' : '/student/tests')}
             className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-sm px-6 py-3 rounded-xl shadow-lg transition cursor-pointer"
           >
-            <ArrowLeft size={16} /> Return to My Tests
+            <ArrowLeft size={16} /> Return to {isFaculty ? 'Faculty Tests' : 'My Tests'}
           </button>
         </div>
       </div>
@@ -490,32 +493,54 @@ export default function TakeTest() {
 
   return (
     <div id="proctored-test-root" className="space-y-4 relative">
-      {/* Proctored Security & Anti-Cheating Bar */}
-      <div className="bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 text-white px-5 py-2.5 rounded-xl flex items-center justify-between border border-rose-500/30 shadow-md text-xs font-semibold">
-        <div className="flex items-center gap-2">
-          <ShieldAlert size={16} className="text-rose-400 animate-pulse shrink-0" />
-          <span>Proctored Assessment Active — Fullscreen & Tab Monitoring Enabled</span>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <span className={`px-2.5 py-0.5 rounded-full font-bold font-mono text-[11px] ${
-            warningCount === 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
-            warningCount === 1 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
-            'bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse'
-          }`}>
-            Malpractice Warnings: {warningCount} / 3
-          </span>
-
-          {!isFullscreen && (
+      {/* Proctored Security & Anti-Cheating Bar or Faculty Preview Bar */}
+      {isFaculty ? (
+        <div className="bg-gradient-to-r from-violet-900 via-purple-900 to-indigo-950 text-white px-5 py-2.5 rounded-xl flex items-center justify-between border border-violet-500/40 shadow-md text-xs font-semibold">
+          <div className="flex items-center gap-2">
+            <span className="bg-violet-500/30 text-violet-200 border border-violet-400/40 px-2.5 py-0.5 rounded text-[11px] font-bold font-mono">
+              FACULTY PREVIEW MODE
+            </span>
+            <span>MCQ Test: <strong>{test?.subject}</strong> — {questions.length} Questions</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-purple-200 hidden sm:inline">
+              👁️ Student View Simulation • Fullscreen & Malpractice Monitoring Disabled
+            </span>
             <button
-              onClick={requestFullscreen}
-              className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white px-2.5 py-1 rounded text-[11px] font-bold transition shadow-xs cursor-pointer border-0"
+              onClick={() => navigate('/faculty/tests')}
+              className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 text-white px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer border-0 shadow-sm"
             >
-              <Maximize2 size={12} /> Enter Fullscreen
+              <ArrowLeft size={13} /> Return to Tests
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 text-white px-5 py-2.5 rounded-xl flex items-center justify-between border border-rose-500/30 shadow-md text-xs font-semibold">
+          <div className="flex items-center gap-2">
+            <ShieldAlert size={16} className="text-rose-400 animate-pulse shrink-0" />
+            <span>Proctored Assessment Active — Fullscreen & Tab Monitoring Enabled</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className={`px-2.5 py-0.5 rounded-full font-bold font-mono text-[11px] ${
+              warningCount === 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+              warningCount === 1 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+              'bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse'
+            }`}>
+              Malpractice Warnings: {warningCount} / 3
+            </span>
+
+            {!isFullscreen && (
+              <button
+                onClick={requestFullscreen}
+                className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white px-2.5 py-1 rounded text-[11px] font-bold transition shadow-xs cursor-pointer border-0"
+              >
+                <Maximize2 size={12} /> Enter Fullscreen
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Malpractice Warning Modal Overlay */}
       {malpracticeModal.open && (

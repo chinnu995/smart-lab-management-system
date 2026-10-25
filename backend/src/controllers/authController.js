@@ -43,30 +43,33 @@ exports.login = async (req, res) => {
   let subject = null;
   let scheme = null;
   let semester = null;
+  let cycle = null;
   if (user.role === 'student') {
-    const [stdRows] = await db.execute('SELECT student_id, usn, department, semester, scheme FROM students WHERE user_id=?', [user.user_id]);
+    const [stdRows] = await db.execute('SELECT student_id, usn, department, semester, scheme, cycle FROM students WHERE user_id=?', [user.user_id]);
     if (stdRows.length) {
       student_id = stdRows[0].student_id;
       usn = stdRows[0].usn;
       department = stdRows[0].department;
       semester = stdRows[0].semester;
       scheme = stdRows[0].scheme;
+      cycle = stdRows[0].cycle || user.cycle || null;
     }
-  } else if (user.role === 'faculty') {
-    const [facRows] = await db.execute('SELECT faculty_id, emp_code, department, subject, scheme FROM faculty WHERE user_id=?', [user.user_id]);
+  } else if (user.role === 'faculty' || user.role === 'hod') {
+    const [facRows] = await db.execute('SELECT faculty_id, emp_code, department, subject, scheme, semester FROM faculty WHERE user_id=?', [user.user_id]);
     if (facRows.length) {
       faculty_id = facRows[0].faculty_id;
       emp_code = facRows[0].emp_code;
-      department = facRows[0].department;
+      department = facRows[0].department || 'Computer Science & Engineering';
       subject = facRows[0].subject;
       scheme = facRows[0].scheme;
+      semester = facRows[0].semester || user.semester || null;
+    } else if (user.role === 'hod') {
+      department = 'Computer Science & Engineering';
     }
-  } else if (user.role === 'hod') {
-    department = 'Computer Science & Engineering';
   }
 
   const token = jwt.sign(
-    { id: user.user_id, role: user.role, name: user.full_name, email: user.email, student_id, faculty_id, subject, scheme, semester },
+    { id: user.user_id, role: user.role, name: user.full_name, email: user.email, student_id, faculty_id, subject, scheme, semester, cycle },
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES }
   );
@@ -75,7 +78,7 @@ exports.login = async (req, res) => {
 
   res.json({
     token,
-    user: { id: user.user_id, name: user.full_name, email: user.email, role: user.role, profile_image: user.profile_image || null, usn, emp_code, department, subject, scheme, semester }
+    user: { id: user.user_id, name: user.full_name, email: user.email, role: user.role, profile_image: user.profile_image || null, usn, emp_code, department, subject, scheme, semester, cycle }
   });
 };
 
@@ -102,8 +105,8 @@ exports.register = async (req, res) => {
 exports.me = async (req, res) => {
   try {
     const [rows] = await db.execute(
-      `SELECT u.user_id, u.full_name, u.email, u.role, u.phone, u.profile_image, u.scheme_id, u.dept AS user_dept, u.semester AS user_sem,
-              s.usn, s.semester, s.batch_year, s.department AS student_dept, s.scheme AS student_scheme,
+      `SELECT u.user_id, u.full_name, u.email, u.role, u.phone, u.profile_image, u.scheme_id, u.dept AS user_dept, u.semester AS user_sem, u.cycle AS user_cycle,
+              s.usn, s.semester, s.batch_year, s.department AS student_dept, s.scheme AS student_scheme, s.cycle AS student_cycle,
               f.emp_code, f.department AS faculty_dept, f.subject AS faculty_subject, f.scheme AS faculty_scheme,
               sch.name AS scheme_name
        FROM users u
@@ -125,6 +128,7 @@ exports.me = async (req, res) => {
         : (u.faculty_scheme || u.scheme_name || null);
       if (u.role === 'student') {
         u.semester = u.semester || u.user_sem || 1;
+        u.cycle = u.student_cycle || u.user_cycle || null;
       }
       u.subject = u.faculty_subject || null;
       delete u.student_dept;
@@ -134,6 +138,8 @@ exports.me = async (req, res) => {
       delete u.user_dept;
       delete u.user_sem;
       delete u.scheme_name;
+      delete u.student_cycle;
+      delete u.user_cycle;
     }
     res.json(u);
   } catch (err) {
@@ -206,6 +212,14 @@ exports.updateProfile = async (req, res) => {
       if (req.body.scheme) {
         await db.execute('UPDATE students SET scheme = ? WHERE user_id = ?', [req.body.scheme.trim(), userId]);
       }
+      if (req.body.cycle !== undefined) {
+        let cVal = req.body.cycle ? String(req.body.cycle).trim().toUpperCase() : null;
+        if (cVal && (cVal.includes('P') || cVal.startsWith('P'))) cVal = 'P';
+        else if (cVal && (cVal.includes('C') || cVal.startsWith('C'))) cVal = 'C';
+        else cVal = null;
+        await db.execute('UPDATE students SET cycle = ? WHERE user_id = ?', [cVal, userId]);
+        await db.execute('UPDATE users SET cycle = ? WHERE user_id = ?', [cVal, userId]);
+      }
     } else if (user.role === 'faculty' && req.body.scheme) {
       await db.execute('UPDATE faculty SET scheme = ? WHERE user_id = ?', [req.body.scheme.trim(), userId]);
     }
@@ -235,7 +249,7 @@ exports.updateProfile = async (req, res) => {
 
     // Fetch updated user info
     const [updatedUserRows] = await db.execute(
-      'SELECT u.user_id, u.full_name, u.email, u.role, u.phone, u.profile_image, s.usn, s.semester, s.batch_year, s.department AS student_dept, s.scheme AS student_scheme, f.emp_code, f.department AS faculty_dept, f.subject AS faculty_subject, f.scheme AS faculty_scheme FROM users u LEFT JOIN students s ON u.user_id = s.user_id LEFT JOIN faculty f ON u.user_id = f.user_id WHERE u.user_id=?',
+      'SELECT u.user_id, u.full_name, u.email, u.role, u.phone, u.profile_image, u.cycle AS user_cycle, s.usn, s.semester, s.batch_year, s.department AS student_dept, s.scheme AS student_scheme, s.cycle AS student_cycle, f.emp_code, f.department AS faculty_dept, f.subject AS faculty_subject, f.scheme AS faculty_scheme FROM users u LEFT JOIN students s ON u.user_id = s.user_id LEFT JOIN faculty f ON u.user_id = f.user_id WHERE u.user_id=?',
       [userId]
     );
     const u = updatedUserRows[0];
@@ -244,11 +258,14 @@ exports.updateProfile = async (req, res) => {
     u.profile_image = u.profile_image || null;
     u.department = u.role === 'student' ? (u.student_dept || 'Computer Science & Engineering') : u.role === 'faculty' ? (u.faculty_dept || 'Computer Science & Engineering') : 'Computer Science & Engineering';
     u.scheme = u.role === 'student' ? u.student_scheme : u.faculty_scheme;
+    u.cycle = u.role === 'student' ? (u.student_cycle || u.user_cycle || null) : null;
     u.subject = u.faculty_subject || null;
     delete u.student_dept;
     delete u.faculty_dept;
     delete u.student_scheme;
     delete u.faculty_scheme;
+    delete u.student_cycle;
+    delete u.user_cycle;
 
     res.json({ message: 'Profile updated successfully', user: u });
   } catch (err) {
@@ -344,17 +361,18 @@ exports.verifyCode = async (req, res) => {
       department = stdRows[0].department;
       scheme = stdRows[0].scheme;
     }
-  } else if (user.role === 'faculty') {
-    const [facRows] = await db.execute('SELECT faculty_id, emp_code, department, subject, scheme FROM faculty WHERE user_id=?', [user.user_id]);
+  } else if (user.role === 'faculty' || user.role === 'hod') {
+    const [facRows] = await db.execute('SELECT faculty_id, emp_code, department, subject, scheme, semester FROM faculty WHERE user_id=?', [user.user_id]);
     if (facRows.length) {
       faculty_id = facRows[0].faculty_id;
       emp_code = facRows[0].emp_code;
-      department = facRows[0].department;
+      department = facRows[0].department || 'Computer Science & Engineering';
       subject = facRows[0].subject;
       scheme = facRows[0].scheme;
+      semester = facRows[0].semester || user.semester || null;
+    } else if (user.role === 'hod') {
+      department = 'Computer Science & Engineering';
     }
-  } else if (user.role === 'hod') {
-    department = 'Computer Science & Engineering';
   }
 
   // Generate JWT token
@@ -373,7 +391,7 @@ exports.verifyCode = async (req, res) => {
 };
 
 exports.signup = async (req, res) => {
-  const { full_name, email, password, role, phone, usn, emp_code, department, semester, scheme, subject } = req.body;
+  const { full_name, email, password, role, phone, usn, emp_code, department, semester, scheme, subject, cycle } = req.body;
 
   if (!full_name || !email || !password || !role) {
     return res.status(400).json({ message: 'Name, email, password, and role are required' });
@@ -457,26 +475,66 @@ exports.signup = async (req, res) => {
     const dept = department || 'Computer Science & Engineering';
 
     const schemeYear = (scheme || '2022').replace(/\D/g, '') || '2022';
-    const [schRows] = await conn.query('SELECT id FROM schemes WHERE name = ? OR name LIKE ? LIMIT 1', [schemeYear, `${schemeYear}%`]);
-    const schemeId = schRows && schRows[0] ? schRows[0].id : null;
-    const semVal = semester ? parseInt(semester) : 1;
+    const [schRows] = await conn.query(
+      `SELECT s.scheme_id AS id 
+       FROM subjects s 
+       JOIN schemes sch ON s.scheme_id = sch.id 
+       WHERE sch.name = ? OR sch.name LIKE ? OR sch.year_label = ?
+       LIMIT 1`,
+      [schemeYear, `${schemeYear}%`, schemeYear]
+    );
+    const schemeId = schRows && schRows[0] 
+      ? schRows[0].id 
+      : ((await conn.query('SELECT id FROM schemes WHERE name = ? OR name LIKE ? ORDER BY id DESC LIMIT 1', [schemeYear, `${schemeYear}%`]))[0]?.[0]?.id || null);
+    let semVal = 1;
+    let cycleVal = cycle ? String(cycle).trim().toUpperCase() : null;
+    if (typeof semester === 'string') {
+      if (semester.includes('1')) semVal = 1;
+      else if (semester.includes('2')) semVal = 2;
+      else if (semester.includes('3')) semVal = 3;
+      else if (semester.includes('4')) semVal = 4;
+      else if (semester.includes('5')) semVal = 5;
+      else if (semester.includes('6')) semVal = 6;
+      else if (semester.includes('7')) semVal = 7;
+      else if (semester.includes('8')) semVal = 8;
+      else semVal = parseInt(semester) || 1;
+
+      if (!cycleVal) {
+        if (semester.includes('-P') || semester.includes('_P') || semester.includes('P-Cycle') || semester.includes('P Cycle') || semester.includes('(P-Cycle)')) {
+          cycleVal = 'P';
+        } else if (semester.includes('-C') || semester.includes('_C') || semester.includes('C-Cycle') || semester.includes('C Cycle') || semester.includes('(C-Cycle)')) {
+          cycleVal = 'C';
+        }
+      }
+    } else if (semester) {
+      semVal = parseInt(semester) || 1;
+    }
+    if (cycleVal) {
+      cycleVal = cycleVal.includes('P') ? 'P' : cycleVal.includes('C') ? 'C' : null;
+    }
+    if ((semVal === 1 || semVal === 2) && !cycleVal) {
+      cycleVal = 'P';
+    } else if (semVal > 2) {
+      cycleVal = null;
+    }
 
     // Create user with is_active=false (pending email verification)
     const [r] = await conn.query(
-      'INSERT INTO users (full_name, email, password_hash, role, phone, department, is_active, scheme_id, dept, semester) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [full_name, cleanEmail, hash, role, phone || null, dept, false, schemeId, dept, semVal]
+      'INSERT INTO users (full_name, email, password_hash, role, phone, department, is_active, scheme_id, dept, semester, cycle) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      [full_name, cleanEmail, hash, role, phone || null, dept, false, schemeId, dept, semVal, cycleVal]
     );
     const userId = r.insertId;
 
     if (role === 'student') {
       await conn.query(
-        'INSERT INTO students (user_id, usn, department, semester, section, batch_year, scheme) VALUES (?,?,?,?,?,?,?)',
-        [userId, usn.trim().toUpperCase(), dept, semester || 1, 'A', new Date().getFullYear(), scheme || '2022 Scheme']
+        'INSERT INTO students (user_id, usn, department, semester, section, batch_year, scheme, cycle) VALUES (?,?,?,?,?,?,?,?)',
+        [userId, usn.trim().toUpperCase(), dept, semVal, 'A', new Date().getFullYear(), scheme || '2022 Scheme', cycleVal]
       );
-    } else if (role === 'faculty') {
+    } else if (role === 'faculty' || role === 'hod') {
+      const code = emp_code ? emp_code.trim() : (role === 'hod' ? `HOD${userId}` : `FAC${userId}`);
       await conn.query(
-        'INSERT INTO faculty (user_id, emp_code, department, designation, specialization, subject, scheme) VALUES (?,?,?,?,?,?,?)',
-        [userId, emp_code.trim(), dept, 'Assistant Professor', subject, subject, scheme || '2022 Scheme']
+        'INSERT INTO faculty (user_id, emp_code, department, designation, specialization, subject, scheme, semester) VALUES (?,?,?,?,?,?,?,?)',
+        [userId, code, dept, role === 'hod' ? 'Professor & HOD' : 'Assistant Professor', subject || 'Computer Networks Lab', subject || 'Computer Networks Lab', scheme || '2022 Scheme', semVal]
       );
     }
 
@@ -608,29 +666,33 @@ exports.verifySignupCode = async (req, res) => {
   let faculty_id = null;
   let scheme = null;
   let semester = null;
+  let cycle = null;
   if (user.role === 'student') {
-    const [stdRows] = await db.execute('SELECT student_id, usn, department, semester, scheme FROM students WHERE user_id=?', [user.user_id]);
+    const [stdRows] = await db.execute('SELECT student_id, usn, department, semester, scheme, cycle FROM students WHERE user_id=?', [user.user_id]);
     if (stdRows.length) {
       student_id = stdRows[0].student_id;
       usn = stdRows[0].usn;
       department = stdRows[0].department;
       semester = stdRows[0].semester;
       scheme = stdRows[0].scheme;
+      cycle = stdRows[0].cycle || user.cycle || null;
     }
-  } else if (user.role === 'faculty') {
-    const [facRows] = await db.execute('SELECT faculty_id, emp_code, department, scheme FROM faculty WHERE user_id=?', [user.user_id]);
+  } else if (user.role === 'faculty' || user.role === 'hod') {
+    const [facRows] = await db.execute('SELECT faculty_id, emp_code, department, subject, scheme, semester FROM faculty WHERE user_id=?', [user.user_id]);
     if (facRows.length) {
       faculty_id = facRows[0].faculty_id;
       emp_code = facRows[0].emp_code;
-      department = facRows[0].department;
+      department = facRows[0].department || 'Computer Science & Engineering';
+      subject = facRows[0].subject;
       scheme = facRows[0].scheme;
+      semester = facRows[0].semester || user.semester || null;
+    } else if (user.role === 'hod') {
+      department = 'Computer Science & Engineering';
     }
-  } else if (user.role === 'hod') {
-    department = 'Computer Science & Engineering';
   }
 
   const token = jwt.sign(
-    { id: user.user_id, role: user.role, name: user.full_name, email: user.email, student_id, faculty_id, scheme, semester },
+    { id: user.user_id, role: user.role, name: user.full_name, email: user.email, student_id, faculty_id, scheme, semester, cycle },
     JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES || '7d' }
   );
@@ -639,7 +701,7 @@ exports.verifySignupCode = async (req, res) => {
 
   res.json({
     token,
-    user: { id: user.user_id, name: user.full_name, email: user.email, role: user.role, usn, emp_code, department, scheme, semester }
+    user: { id: user.user_id, name: user.full_name, email: user.email, role: user.role, usn, emp_code, department, scheme, semester, cycle }
   });
 };
 

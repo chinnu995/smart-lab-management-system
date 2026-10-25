@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import StatCard from '../../components/StatCard.jsx';
-import { CalendarRange, AlertTriangle, Megaphone, ClipboardCheck, BookOpen, Plus, Download, Trash2, FileUp, Brain, Sparkles, Loader2, Clock, CheckCircle2, Users, Edit3 } from 'lucide-react';
+import { CalendarRange, AlertTriangle, Megaphone, ClipboardCheck, BookOpen, Plus, Download, Trash2, FileUp, Brain, Sparkles, Loader2, Clock, CheckCircle2, Users, Edit3, ShieldCheck, Code2 } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -153,7 +153,7 @@ export default function FacultyDashboard() {
               Welcome back, {user?.name || 'Faculty'}!
             </h2>
             <p className="text-xs text-slate-555 dark:text-slate-400 mt-1">
-              Manage student attendance, lab experiments, manuals, and AI MCQ tests.
+              Manage student attendance, lab manuals, and VTU Lab Internals (Coding & MCQ Assessments).
             </p>
           </div>
           {user?.emp_code && (
@@ -161,6 +161,29 @@ export default function FacultyDashboard() {
               Employee ID: {user.emp_code}
             </div>
           )}
+        </div>
+
+        {/* Quick Actions Strip */}
+        <div className="flex flex-wrap items-center gap-2.5 mt-4 pt-4 border-t border-slate-200/80 dark:border-slate-800/80">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Quick Actions:</span>
+          <button
+            onClick={() => navigate('/faculty/tests')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition shadow-sm cursor-pointer border-0"
+          >
+            <ShieldCheck size={14} /> Conduct Lab Internals / Tests
+          </button>
+          <button
+            onClick={() => navigate('/faculty/attendance')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition border border-slate-300 dark:border-slate-700 cursor-pointer"
+          >
+            <ClipboardCheck size={14} /> Mark Attendance
+          </button>
+          <button
+            onClick={() => navigate('/faculty/coding-results')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition border border-slate-300 dark:border-slate-700 cursor-pointer"
+          >
+            <Code2 size={14} /> Lab Exam Submissions
+          </button>
         </div>
       </div>
 
@@ -170,7 +193,7 @@ export default function FacultyDashboard() {
         <StatCard icon={AlertTriangle} label="Open Complaints" value={ov.openComplaints} accent="rose"/>
         <StatCard icon={Megaphone} label="Announcements" value={ov.announcements} accent="amber"/>
         <div onClick={() => navigate('/faculty/tests')} className="cursor-pointer transition-all hover:scale-[1.03] active:scale-95 duration-200">
-          <StatCard icon={Brain} label="MCQ Tests" value={testsCount} accent="violet"/>
+          <StatCard icon={ShieldCheck} label="Lab Internals & Tests" value={testsCount} accent="violet"/>
         </div>
       </div>
       

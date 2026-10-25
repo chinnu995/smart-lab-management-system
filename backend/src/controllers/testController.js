@@ -6,11 +6,13 @@ const audit = require('../utils/audit');
 // POST /api/tests/generate
 exports.generateTest = async (req, res) => {
   try {
-    const { subject, duration = 10 } = req.body;
+    const { subject, duration = 10, target_semester = null, scheme = null } = req.body;
     if (!subject || typeof subject !== 'string' || !subject.trim()) {
       return res.status(400).json({ error: 'Subject is required' });
     }
     const cleanSubject = subject.trim();
+    const targetSem = target_semester ? parseInt(target_semester, 10) : null;
+    const cleanScheme = scheme ? scheme.toString().trim() : null;
     const createdBy = req.user.id;
 
     let questions;
@@ -63,8 +65,8 @@ exports.generateTest = async (req, res) => {
 
     // Insert test record
     const [testResult] = await db.query(
-      'INSERT INTO tests (subject, created_by, duration_minutes) VALUES (?,?,?)',
-      [cleanSubject, createdBy, duration]
+      'INSERT INTO tests (subject, created_by, duration_minutes, target_semester, scheme) VALUES (?,?,?,?,?)',
+      [cleanSubject, createdBy, duration, targetSem, cleanScheme]
     );
     const testId = testResult.insertId;
 
@@ -79,17 +81,24 @@ exports.generateTest = async (req, res) => {
       [qInserts]
     );
 
-    // Insert auto-generated announcement for students
-    const annTitle = `New VTU MCQ Test Scheduled: ${cleanSubject}`;
-    const annContent = `A new VTU syllabus MCQ test on "${cleanSubject}" has been generated and is now active. Duration: ${duration} minutes. Check "MCQ Tests" in your menu to complete.`;
+    // Insert auto-generated announcement for students (scoped to target semester)
+    const semLabel = targetSem ? ` [Sem ${targetSem}]` : '';
+    const annTitle = `New VTU MCQ Test Scheduled: ${cleanSubject}${semLabel}`;
+    const annContent = `A new VTU syllabus MCQ test on "${cleanSubject}" has been generated and is now active${targetSem ? ` for Semester ${targetSem} students` : ''}. Duration: ${duration} minutes. Check "MCQ Tests" in your menu to complete.`;
     const [annResult] = await db.query(
-      `INSERT INTO announcements (title, content, category, posted_by, target_role, is_pinned)
-       VALUES (?,?,?,?,?,?)`,
-      [annTitle, annContent, 'exam', createdBy, 'student', 1]
+      `INSERT INTO announcements (title, content, category, posted_by, target_role, is_pinned, target_semester, scheme)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [annTitle, annContent, 'exam', createdBy, 'student', 0, targetSem, cleanScheme]
     );
 
-    // Insert notifications into notifications table for all student users
-    const [studentUsers] = await db.query("SELECT user_id FROM users WHERE role = 'student'").catch(() => [[]]);
+    // Insert notifications into notifications table for students of the target semester
+    let stuSql = "SELECT u.user_id FROM users u LEFT JOIN students s ON s.user_id = u.user_id WHERE u.role = 'student'";
+    const stuParams = [];
+    if (targetSem) {
+      stuSql += " AND (COALESCE(s.semester, u.semester) = ?)";
+      stuParams.push(targetSem);
+    }
+    const [studentUsers] = await db.query(stuSql, stuParams).catch(() => [[]]);
     for (const stu of studentUsers || []) {
       await db.query(
         'INSERT INTO notifications (user_id, type, title, message) VALUES (?,?,?,?)',
@@ -100,20 +109,27 @@ exports.generateTest = async (req, res) => {
     // Notify students via websocket in real-time
     const io = req.app?.get('io');
     if (io) {
-      io.to('role:student').emit('announcement:new', {
+      const room = targetSem ? `sem:${targetSem}` : 'role:student';
+      io.to(room).emit('announcement:new', {
         id: annResult.insertId,
         title: annTitle,
-        category: 'exam'
+        category: 'exam',
+        target_semester: targetSem,
+        scheme: cleanScheme
       });
-      io.to('role:student').emit('notification', {
+      io.to(room).emit('notification', {
         title: annTitle,
         message: annContent,
-        type: 'exam'
+        type: 'exam',
+        target_semester: targetSem,
+        scheme: cleanScheme
       });
-      io.to('role:student').emit('mcq-test:new', {
+      io.to(room).emit('mcq-test:new', {
         testId,
         subject: cleanSubject,
         duration,
+        target_semester: targetSem,
+        scheme: cleanScheme,
         title: annTitle,
         message: annContent
       });
@@ -140,6 +156,7 @@ exports.listCreatedTests = async (req, res) => {
     
     let query = `
       SELECT t.test_id, t.subject, t.duration_minutes, COALESCE(t.test_type, 'mcq') AS test_type, t.status, t.created_at,
+             t.target_semester, t.scheme,
              u.full_name AS creator_name,
              COUNT(tq.question_id) AS question_count,
              (SELECT COUNT(*) FROM test_submissions ts WHERE ts.test_id = t.test_id) AS submission_count
@@ -155,7 +172,7 @@ exports.listCreatedTests = async (req, res) => {
     }
     
     query += `
-      GROUP BY t.test_id, u.full_name, t.subject, t.duration_minutes, t.test_type, t.status, t.created_at
+      GROUP BY t.test_id, u.full_name, t.subject, t.duration_minutes, t.test_type, t.status, t.created_at, t.target_semester, t.scheme
       ORDER BY t.created_at DESC
     `;
     
@@ -175,18 +192,21 @@ exports.listActiveTests = async (req, res) => {
       ? paramId 
       : (req.user ? req.user.id : 0);
 
-    // Resolve actual student_id from user_id
-    const [studentRows] = await db.query('SELECT student_id FROM students WHERE user_id = ?', [userId]);
+    // Resolve actual student_id AND semester from user_id
+    const [studentRows] = await db.query('SELECT student_id, semester FROM students WHERE user_id = ?', [userId]);
     const studentId = studentRows[0]?.student_id || 0;
+    const studentSemester = studentRows[0]?.semester || null;
 
     // Use LEFT JOIN to find tests where the student has NOT yet submitted
+    // If test has target_semester set, only show to students of that semester
     const [rows] = await db.query(
-      `SELECT t.test_id, t.subject, t.duration_minutes, COALESCE(t.test_type, 'mcq') AS test_type, t.created_at
+      `SELECT t.test_id, t.subject, t.duration_minutes, COALESCE(t.test_type, 'mcq') AS test_type, t.created_at, t.target_semester, t.scheme
        FROM tests t
        LEFT JOIN test_submissions ts ON ts.test_id = t.test_id AND ts.student_id = ?
        WHERE t.status = 'active' AND ts.submission_id IS NULL
+         AND (t.target_semester IS NULL OR t.target_semester = ?)
        ORDER BY t.created_at DESC`,
-      [studentId]
+      [studentId, studentSemester]
     );
 
     // Deduplicate to show only the 1 latest test per subject & type
@@ -550,27 +570,55 @@ exports.logMalpractice = async (req, res) => {
 // POST /api/tests/generate-coding — Generate Proctored Coding Lab Test
 exports.generateCodingTest = async (req, res) => {
   try {
-    const { subject, duration = 60 } = req.body;
+    const { subject, duration = 60, target_semester = null, scheme = null } = req.body;
     if (!subject || typeof subject !== 'string' || !subject.trim()) {
       return res.status(400).json({ error: 'Subject is required' });
     }
     const cleanSubject = subject.trim();
+    const targetSem = target_semester ? parseInt(target_semester, 10) : null;
+    const cleanScheme = scheme ? scheme.toString().trim() : null;
     const createdBy = req.user.id;
+
+    // Helper to map any subject alias/name to official category
+    const resolveCategory = (sub) => {
+      const s = (sub || '').trim().toUpperCase();
+      if (s.includes('NETWORK')) return 'COMPUTER NETWORKS';
+      if (s.includes('DATA STRUCTURE') || s === 'DSA') return 'DATA STRUCTURES';
+      if (s.includes('ALGORITHM') || s === 'ADA') return 'ADA';
+      if (s.includes('JAVA')) return 'JAVA';
+      if (s.includes('C++') || s.includes('CPP')) return 'C++';
+      if (s.includes('VISUALIZ')) return 'DATA VISUALIZATION WITH PYTHON';
+      if (s.includes('PYTHON')) return 'PYTHON';
+      if (s.includes('OPERATING SYSTEM') || s === 'OS') return 'OPERATING SYSTEMS';
+      if (s.includes('DBMS') || s.includes('DATABASE')) return 'DBMS';
+      if (s.includes('DIGITAL') || s.includes('DDCO')) return 'DIGITAL DESIGN & COMPUTER ORGANIZATION';
+      if (s.includes('GIT')) return 'GIT & VERSION CONTROL';
+      if (s.includes('IOT') || s.includes('EMBEDDED')) return 'IOT';
+      if (s.includes('WEB') || s.includes('HTML')) return 'WEB TECHNOLOGIES';
+      if (s.includes('MACHINE LEARNING') || s === 'ML') return 'MACHINE LEARNING';
+      if (s.includes('AI') || s.includes('ARTIFICIAL')) return 'AI';
+      if (s.includes('MONGO')) return 'MONGODB';
+      if (s.includes('LATEX')) return 'LATEX';
+      if (s.includes(' C ') || s === 'C' || s.includes('C PROGRAMMING')) return 'C PROGRAMMING';
+      return s;
+    };
+
+    const targetCategory = resolveCategory(cleanSubject);
 
     // 1. Prioritize official conducted Lab Programs for this subject (VTU ADA Lab 1 to 10, VTU DSA Lab 1 to 12, etc.)
     let [problems] = await db.query(
       `SELECT problem_id, title, week_number FROM coding_challenges 
-       WHERE UPPER(category) = UPPER(?) 
-         AND (LOWER(title) LIKE '%lab%' OR LOWER(title) LIKE '%vtu%')
+       WHERE (UPPER(category) = UPPER(?) OR UPPER(category) = UPPER(?))
+         AND (LOWER(title) LIKE '%lab%' OR LOWER(title) LIKE '%vtu%' OR week_number > 0)
        ORDER BY week_number ASC, problem_id ASC LIMIT 10`,
-      [cleanSubject]
+      [cleanSubject, targetCategory]
     );
 
     // 2. If fewer than 10 official lab programs found, fall back to general category problems
     if (!problems || problems.length < 10) {
       const existingIds = (problems || []).map(p => p.problem_id);
-      let query = `SELECT problem_id, title FROM coding_challenges WHERE UPPER(category) = UPPER(?)`;
-      const params = [cleanSubject];
+      let query = `SELECT problem_id, title FROM coding_challenges WHERE (UPPER(category) = UPPER(?) OR UPPER(category) = UPPER(?))`;
+      const params = [cleanSubject, targetCategory];
       if (existingIds.length) {
         query += ` AND problem_id NOT IN (?)`;
         params.push(existingIds);
@@ -580,6 +628,22 @@ exports.generateCodingTest = async (req, res) => {
 
       const [extra] = await db.query(query, params).catch(() => [[]]);
       problems = [...(problems || []), ...(extra || [])];
+    }
+
+    // 3. If still fewer than 10, fuzzy search by keyword or use general pool
+    if (!problems.length) {
+      const keyword = targetCategory.split(' ')[0] || cleanSubject;
+      const [fuzzy] = await db.query(
+        `SELECT problem_id, title FROM coding_challenges WHERE UPPER(category) LIKE ? OR UPPER(title) LIKE ? ORDER BY problem_id ASC LIMIT 10`,
+        [`%${keyword}%`, `%${keyword}%`]
+      ).catch(() => [[]]);
+      problems = fuzzy || [];
+    }
+
+    if (!problems.length) {
+      // Last-resort fallback to standard algorithmic challenges so test creation never crashes
+      const [fallback] = await db.query('SELECT problem_id, title FROM coding_challenges ORDER BY problem_id ASC LIMIT 10').catch(() => [[]]);
+      problems = fallback || [];
     }
 
     if (!problems.length) {
@@ -594,8 +658,8 @@ exports.generateCodingTest = async (req, res) => {
 
     // Insert coding test record
     const [testResult] = await db.query(
-      'INSERT INTO tests (subject, created_by, duration_minutes, test_type) VALUES (?,?,?,?)',
-      [cleanSubject, createdBy, duration, 'coding']
+      'INSERT INTO tests (subject, created_by, duration_minutes, test_type, target_semester, scheme) VALUES (?,?,?,?,?,?)',
+      [cleanSubject, createdBy, duration, 'coding', targetSem, cleanScheme]
     );
     const testId = testResult.insertId;
 
@@ -612,18 +676,25 @@ exports.generateCodingTest = async (req, res) => {
       [qInserts]
     );
 
-    // Auto-generate announcement for students
-    const annTitle = `🚨 New Proctored Coding Lab Test: ${cleanSubject}`;
-    const annContent = `A new Proctored Coding Lab Test on "${cleanSubject}" has been created by your subject faculty. Each student is assigned 1 coding problem with full tab switch security. Duration: ${duration} minutes. Check "Coding Lab Tests" in your menu to complete.`;
+    // Auto-generate announcement for students (scoped to target semester)
+    const semLabel = targetSem ? ` [Sem ${targetSem}]` : '';
+    const annTitle = `🚨 New Proctored Coding Lab Test: ${cleanSubject}${semLabel}`;
+    const annContent = `A new Proctored Coding Lab Test on "${cleanSubject}" has been created by your subject faculty${targetSem ? ` for Semester ${targetSem} students` : ''}. Each student is assigned 1 coding problem with full tab switch security. Duration: ${duration} minutes. Check "Coding Lab Tests" in your menu to complete.`;
     
     const [annResult] = await db.query(
-      `INSERT INTO announcements (title, content, category, posted_by, target_role, is_pinned)
-       VALUES (?,?,?,?,?,?)`,
-      [annTitle, annContent, 'exam', createdBy, 'student', 1]
+      `INSERT INTO announcements (title, content, category, posted_by, target_role, is_pinned, target_semester, scheme)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [annTitle, annContent, 'exam', createdBy, 'student', 0, targetSem, cleanScheme]
     );
 
-    // Insert notifications into notifications table for all student users
-    const [studentUsers] = await db.query("SELECT user_id FROM users WHERE role = 'student'").catch(() => [[]]);
+    // Insert notifications into notifications table for students of the target semester
+    let stuSql = "SELECT u.user_id FROM users u LEFT JOIN students s ON s.user_id = u.user_id WHERE u.role = 'student'";
+    const stuParams = [];
+    if (targetSem) {
+      stuSql += " AND (COALESCE(s.semester, u.semester) = ?)";
+      stuParams.push(targetSem);
+    }
+    const [studentUsers] = await db.query(stuSql, stuParams).catch(() => [[]]);
     for (const stu of studentUsers || []) {
       await db.query(
         'INSERT INTO notifications (user_id, type, title, message) VALUES (?,?,?,?)',
@@ -633,15 +704,20 @@ exports.generateCodingTest = async (req, res) => {
 
     const io = req.app?.get('io');
     if (io) {
-      io.to('role:student').emit('announcement:new', {
+      const room = targetSem ? `sem:${targetSem}` : 'role:student';
+      io.to(room).emit('announcement:new', {
         id: annResult.insertId,
         title: annTitle,
-        category: 'exam'
+        category: 'exam',
+        target_semester: targetSem,
+        scheme: cleanScheme
       });
-      io.to('role:student').emit('coding-test:new', {
+      io.to(room).emit('coding-test:new', {
         testId,
         subject: cleanSubject,
         duration,
+        target_semester: targetSem,
+        scheme: cleanScheme,
         title: annTitle,
         message: annContent
       });

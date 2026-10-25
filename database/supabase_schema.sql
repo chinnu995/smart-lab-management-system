@@ -72,7 +72,10 @@ CREATE TABLE faculty (
   emp_code     VARCHAR(30) NOT NULL UNIQUE,
   department   VARCHAR(80) NOT NULL,
   designation  VARCHAR(80),
-  specialization VARCHAR(120)
+  specialization VARCHAR(120),
+  subject VARCHAR(100),
+  scheme VARCHAR(20),
+  semester INT
 );
 
 -- ---------------------------------------------------------------------
@@ -217,6 +220,8 @@ CREATE TABLE announcements (
   target_role  VARCHAR(20) DEFAULT 'all' CHECK (target_role IN ('all','student','faculty','hod')),
   is_pinned    BOOLEAN DEFAULT FALSE,
   scheduled_at TIMESTAMPTZ,
+  target_semester INT NULL,
+  scheme VARCHAR(20) NULL,
   created_at   TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -305,6 +310,9 @@ CREATE TABLE tests (
   created_by INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
   duration_minutes INT DEFAULT 10,
   status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active','closed')),
+  test_type VARCHAR(50) DEFAULT 'mcq',
+  target_semester INT NULL,
+  scheme VARCHAR(20) NULL,
   created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 

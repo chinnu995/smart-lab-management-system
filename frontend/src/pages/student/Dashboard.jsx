@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import StatCard from '../../components/StatCard.jsx';
-import { ClipboardCheck, CalendarRange, Megaphone, AlertTriangle, QrCode, BookOpen, Download, Code2, Play, FileText, ArrowRight, Award, MessageSquare, Star, X, Brain, Clock, Sparkles, Edit3 } from 'lucide-react';
+import { ClipboardCheck, CalendarRange, Megaphone, AlertTriangle, QrCode, BookOpen, Download, Code2, Play, FileText, ArrowRight, Award, MessageSquare, Star, X, Brain, Clock, Sparkles, Edit3, RefreshCw } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { useAuth } from '../../context/AuthContext.jsx';
 import StudentRanksWidget from '../../components/StudentRanksWidget.jsx';
@@ -25,13 +25,21 @@ export default function StudentDashboard() {
   const [comments, setComments] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  const fetchAnnouncements = () => {
+    api.get('/announcements').then(r => setAnns(Array.isArray(r.data) ? r.data.slice(0, 5) : [])).catch(() => {});
+  };
+
   useEffect(() => {
     api.get('/me/attendance').then(r => setAtt(r.data)).catch(()=>{});
     api.get('/bookings').then(r => setBookings(r.data));
-    api.get('/announcements').then(r => setAnns(r.data.slice(0,5)));
+    fetchAnnouncements();
     api.get('/experiments').then(r => setExperiments(r.data)).catch(()=>{});
     api.get('/faculty').then(r => setFacultyList(r.data || [])).catch(()=>{});
     api.get('/tests/active/me').then(r => setActiveTests(r.data || [])).catch(()=>{});
+
+    // Auto-refresh announcements periodically (synced to 12h cycle)
+    const annInterval = setInterval(fetchAnnouncements, 60 * 1000);
+    return () => clearInterval(annInterval);
   }, []);
 
   const handleSubmitFeedback = async () => {
@@ -112,7 +120,12 @@ export default function StudentDashboard() {
 
         <div className="card">
           <h3 className="font-semibold mb-3 flex items-center justify-between">
-            <span>Latest Announcements</span>
+            <div className="flex items-center gap-2">
+              <span>Latest Announcements</span>
+              <span className="text-[10px] text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/50 px-2 py-0.5 rounded-full font-bold border border-violet-200 dark:border-violet-800 flex items-center gap-1">
+                <RefreshCw size={10} /> 12h Auto-Refresh
+              </span>
+            </div>
             <button 
               onClick={() => setFeedbackModalOpen(true)}
               className="text-xs bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 text-purple-700 dark:text-purple-300 font-bold px-3 py-1 rounded-xl border border-purple-200 dark:border-purple-800 transition cursor-pointer flex items-center gap-1"
@@ -122,10 +135,24 @@ export default function StudentDashboard() {
           </h3>
           <ul className="space-y-2 text-sm">
             {anns.map(a => <li key={a.announcement_id} className="border-b border-slate-200 dark:border-slate-700 pb-2">
-              <div className="font-medium">{a.title}</div>
+              <div className="font-medium flex items-center justify-between">
+                <span className="flex items-center gap-2 flex-wrap">
+                  <span>{a.title}</span>
+                  {a.target_semester && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20">
+                      Sem {a.target_semester}
+                    </span>
+                  )}
+                </span>
+                {a.is_pinned && <span className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 font-bold px-1.5 py-0.5 rounded border border-amber-500/20">Pinned</span>}
+              </div>
               <div className="text-xs text-slate-500">{new Date(a.created_at).toLocaleString()}</div>
             </li>)}
-            {!anns.length && <div className="text-slate-500">No announcements.</div>}
+            {!anns.length && (
+              <div className="text-slate-500 text-xs py-4 text-center">
+                No active announcements in the last 12 hours. (Refreshes every 12h)
+              </div>
+            )}
           </ul>
         </div>
       </div>

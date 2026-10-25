@@ -419,6 +419,8 @@ CREATE TABLE tests (
   created_by INT NOT NULL,
   duration_minutes INT DEFAULT 10,
   status ENUM('active','closed') DEFAULT 'active',
+  target_semester INT NULL COMMENT 'If set, only students of this semester can see this test',
+  scheme VARCHAR(20) NULL COMMENT 'VTU scheme year, e.g. 2022 or 2025',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB;

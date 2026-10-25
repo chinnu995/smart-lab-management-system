@@ -26,7 +26,24 @@ module.exports = function initSockets(io) {
     const u = socket.user;
     if (u.id) socket.join(`user:${u.id}`);
     if (u.role) socket.join(`role:${u.role}`);
-    console.log(`▶ Socket connected: user=${u.id} role=${u.role}`);
+    if (u.semester) socket.join(`sem:${u.semester}`);
+    
+    // Auto-resolve semester room for student sockets
+    if (u.id && u.role === 'student') {
+      const db = require('../config/db');
+      db.query(
+        "SELECT COALESCE(s.semester, u.semester) AS semester FROM users u LEFT JOIN students s ON s.user_id = u.user_id WHERE u.user_id = ?",
+        [u.id]
+      ).then(([rows]) => {
+        const sem = rows?.[0]?.semester;
+        if (sem) {
+          socket.join(`sem:${sem}`);
+          console.log(`▶ Student joined sem:${sem} room`);
+        }
+      }).catch(() => {});
+    }
+
+    console.log(`▶ Socket connected: user=${u.id} role=${u.role} sem=${u.semester || 'auto'}`);
 
     // Register Kahoot Live Quiz socket listeners
     registerKahootSocket(io, socket);

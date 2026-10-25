@@ -235,7 +235,12 @@ export default function CodingResults() {
               className="text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500 cursor-pointer"
             >
               <option value="all">All Subjects</option>
-              {['ADA', 'DBMS', 'LATEX', 'MONGODB', 'AI', 'JAVA', 'PYTHON', 'OPERATING SYSTEMS'].map(c => (
+              {[
+                'ADA', 'DBMS', 'LATEX', 'MONGODB', 'AI', 'JAVA', 'PYTHON', 'OPERATING SYSTEMS',
+                'C PROGRAMMING', 'DATA STRUCTURES', 'C++', 'DIGITAL DESIGN & COMPUTER ORGANIZATION',
+                'COMPUTER NETWORKS', 'IOT', 'MACHINE LEARNING', 'DSA',
+                'GIT & VERSION CONTROL', 'DATA VISUALIZATION WITH PYTHON', 'WEB TECHNOLOGIES'
+              ].map(c => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>

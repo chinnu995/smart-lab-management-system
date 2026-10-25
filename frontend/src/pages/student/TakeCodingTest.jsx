@@ -7,6 +7,8 @@ import {
   RotateCcw, Trophy, FileText, Terminal, Code2, AlertTriangle, ShieldAlert, Maximize2, Award
 } from 'lucide-react';
 
+import { useAuth } from '../../context/AuthContext.jsx';
+
 const DEFAULT_LANG_STARTERS = {
   c: `#include <stdio.h>\n\nint main() {\n    // Write your solution here\n    return 0;\n}\n`,
   cpp: `#include <iostream>\nusing namespace std;\n\nint main() {\n    // Write your solution here\n    return 0;\n}\n`,
@@ -19,6 +21,8 @@ const DEFAULT_LANG_STARTERS = {
 export default function TakeCodingTest() {
   const { testId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isFaculty = user?.role === 'faculty' || user?.role === 'hod';
 
   // Test & Problem State
   const [testData, setTestData] = useState(null);
@@ -73,20 +77,20 @@ export default function TakeCodingTest() {
         }
       } catch (err) {
         toast.error(err.response?.data?.error || 'Failed to load assigned coding lab test');
-        navigate('/student/tests');
+        navigate(isFaculty ? '/faculty/tests' : '/student/tests');
       } finally {
         setLoading(false);
       }
     };
     fetchTestDetails();
-  }, [testId, navigate]);
+  }, [testId, navigate, isFaculty]);
 
-  // Auto-fullscreen when test is loaded
+  // Auto-fullscreen when test is loaded (students only)
   useEffect(() => {
-    if (testData && !testData.isSubmitted) {
+    if (testData && !testData.isSubmitted && !isFaculty) {
       requestFullscreen();
     }
-  }, [testData]);
+  }, [testData, isFaculty]);
 
   // Exam Countdown Timer
   useEffect(() => {
@@ -168,7 +172,7 @@ export default function TakeCodingTest() {
 
   // Tab Switch & Proctoring Security Listener
   useEffect(() => {
-    if (!testData || testData.isSubmitted || submissionResult) return;
+    if (isFaculty || !testData || testData.isSubmitted || submissionResult) return;
 
     let isSubmittingAuto = false;
 
@@ -319,37 +323,59 @@ export default function TakeCodingTest() {
 
       {/* Top Proctored Security Header Bar */}
       {!submissionResult && (
-        <div className="bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 text-white px-4 py-1.5 flex items-center justify-between border-b border-rose-500/30 text-xs font-semibold shrink-0">
-          <div className="flex items-center gap-2">
-            <ShieldAlert size={15} className="text-rose-400 animate-pulse shrink-0" />
-            <span>Proctored Coding Test: <strong>{testData.subject}</strong> — Batch #{testData.batchIndex} (Q{testData.questionNumberInBatch} of {testData.totalInPool} Assigned)</span>
+        isFaculty ? (
+          <div className="bg-gradient-to-r from-violet-900 via-purple-900 to-indigo-950 text-white px-4 py-2 flex items-center justify-between border-b border-violet-500/40 text-xs font-semibold shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="bg-violet-500/30 text-violet-200 border border-violet-400/40 px-2 py-0.5 rounded text-[10px] font-bold font-mono">
+                FACULTY PREVIEW MODE
+              </span>
+              <span>Coding Test: <strong>{testData.subject}</strong> — Problem {testData.questionNumberInBatch} of {testData.totalInPool} (Pool Size: {testData.totalInPool})</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] text-purple-200 hidden sm:inline">
+                👁️ Student View Simulation • Fullscreen & Malpractice Monitoring Disabled
+              </span>
+              <button
+                onClick={() => navigate('/faculty/tests')}
+                className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-500 text-white px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer border-0 shadow-sm"
+              >
+                <ArrowLeft size={13} /> Return to Tests
+              </button>
+            </div>
           </div>
-
-          <div className="flex items-center gap-4">
-            <div className={`flex items-center gap-1 font-mono font-bold text-xs px-2.5 py-0.5 rounded-full ${
-              timeLeft < 180 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse' : 'bg-slate-800 text-amber-300 border border-slate-700'
-            }`}>
-              <Clock size={13} /> {timeFormatted}
+        ) : (
+          <div className="bg-gradient-to-r from-slate-900 via-rose-950 to-slate-900 text-white px-4 py-1.5 flex items-center justify-between border-b border-rose-500/30 text-xs font-semibold shrink-0">
+            <div className="flex items-center gap-2">
+              <ShieldAlert size={15} className="text-rose-400 animate-pulse shrink-0" />
+              <span>Proctored Coding Test: <strong>{testData.subject}</strong> — Batch #{testData.batchIndex} (Q{testData.questionNumberInBatch} of {testData.totalInPool} Assigned)</span>
             </div>
 
-            <span className={`px-2.5 py-0.5 rounded-full font-bold font-mono text-[10px] ${
-              warningCount === 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
-              warningCount === 1 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
-              'bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse'
-            }`}>
-              Warnings: {warningCount} / 3
-            </span>
+            <div className="flex items-center gap-4">
+              <div className={`flex items-center gap-1 font-mono font-bold text-xs px-2.5 py-0.5 rounded-full ${
+                timeLeft < 180 ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse' : 'bg-slate-800 text-amber-300 border border-slate-700'
+              }`}>
+                <Clock size={13} /> {timeFormatted}
+              </div>
 
-            {!isFullscreen && (
-              <button
-                onClick={requestFullscreen}
-                className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer border-0"
-              >
-                <Maximize2 size={11} /> Fullscreen
-              </button>
-            )}
+              <span className={`px-2.5 py-0.5 rounded-full font-bold font-mono text-[10px] ${
+                warningCount === 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                warningCount === 1 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                'bg-rose-500/20 text-rose-300 border border-rose-500/30 animate-pulse'
+              }`}>
+                Warnings: {warningCount} / 3
+              </span>
+
+              {!isFullscreen && (
+                <button
+                  onClick={requestFullscreen}
+                  className="flex items-center gap-1 bg-rose-600 hover:bg-rose-500 text-white px-2 py-0.5 rounded text-[10px] font-bold transition cursor-pointer border-0"
+                >
+                  <Maximize2 size={11} /> Fullscreen
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )
       )}
 
       {/* Main Container */}
@@ -487,10 +513,10 @@ export default function TakeCodingTest() {
                 <p className="text-xs text-slate-400 mt-1">Score: <strong className="text-emerald-400 text-sm">{submissionResult.score || 100} / 100</strong></p>
               </div>
               <button
-                onClick={() => navigate('/student/tests')}
+                onClick={() => navigate(isFaculty ? '/faculty/tests' : '/student/tests')}
                 className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-6 py-2.5 rounded-xl transition cursor-pointer border-0"
               >
-                Return to My Tests
+                {isFaculty ? '← Return to Faculty Tests & Generator' : 'Return to My Tests'}
               </button>
             </div>
           ) : (

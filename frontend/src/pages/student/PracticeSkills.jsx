@@ -83,7 +83,9 @@ export default function PracticeSkills() {
         params.include = 'activity';
       }
 
-      if (user?.role !== 'student') {
+      if (user?.role === 'student') {
+        if (selectedSemester) params.semester = selectedSemester;
+      } else {
         if (facScheme !== 'all') params.scheme = facScheme;
         if (facDept !== 'all') params.dept = facDept;
         if (facSemester !== 'all') params.semester = facSemester;
@@ -301,8 +303,17 @@ export default function PracticeSkills() {
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-extrabold text-slate-900 dark:text-white">My Lab Programs</h2>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 uppercase">
-                {user?.role === 'student' ? `${studentInfo?.scheme || ''} Scheme` : 'All Schemes'}
+                {user?.role === 'student' ? `${(studentInfo?.scheme || '').replace(/scheme/i, '').trim()} Scheme` : 'All Schemes'}
               </span>
+              {user?.role === 'student' && studentInfo?.cycle && (
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase ${
+                  studentInfo.cycle === 'P'
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                }`}>
+                  {studentInfo.cycle === 'P' ? 'P-Cycle (Physics)' : 'C-Cycle (Chemistry)'}
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Curriculum lab programs strictly matching your scheme and department.
@@ -347,9 +358,6 @@ export default function PracticeSkills() {
             )}
           </div>
         </div>
-
-
-        {/* Faculty / HOD Semester Selector only */}
 
         {/* Faculty / HOD Filter Controls */}
         {user?.role !== 'student' && (
@@ -661,18 +669,36 @@ export default function PracticeSkills() {
             )}
           </div>
         ) : displayedSubjects.length === 0 ? (
-          /* Empty State: Programs coming soon */
+          /* Empty State: Programs coming soon or C-Cycle Notice */
           <div className="card bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-12 text-center max-w-xl mx-auto shadow-sm space-y-4">
             <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/20 shadow-xs">
               <BookOpen size={32} />
             </div>
             <div className="space-y-1.5">
-              <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">Programs coming soon</h3>
+              <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
+                {user?.role === 'student' && studentInfo?.cycle === 'C'
+                  ? 'Chemistry Cycle (C-Cycle)'
+                  : 'Programs coming soon'}
+              </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
                 {user?.role === 'student'
-                  ? `No lab programs are currently listed for Semester ${studentInfo?.semester || 1} under your curriculum. Check back soon.`
+                  ? studentInfo?.cycle === 'C'
+                    ? studentInfo?.semester === 2
+                      ? 'You are enrolled in C-Cycle. Python Programming Lab programs are active during P-Cycle (Physics Cycle). You can switch to P-Cycle in your profile if taking Physics cycle this semester.'
+                      : 'You are enrolled in C-Cycle. Coding Lab programs (POPC C Programming) are active during P-Cycle (Physics Cycle). You can switch to P-Cycle in your profile if taking Physics cycle this semester.'
+                    : `No lab programs are currently listed for Semester ${selectedSemester || studentInfo?.semester || 1} under your curriculum. Check back soon.`
                   : 'No curriculum subjects found for the selected filter combination.'}
               </p>
+              {user?.role === 'student' && studentInfo?.cycle === 'C' && (
+                <div className="pt-2">
+                  <button
+                    onClick={() => navigate('/profile')}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs shadow-xs cursor-pointer transition"
+                  >
+                    Switch to P-Cycle in Profile →
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ) : (

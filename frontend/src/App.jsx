@@ -92,20 +92,20 @@ export default function App() {
         <Route path="student/coding/subject/:id" element={<Private roles={['student', 'faculty', 'hod']}><SubjectPrograms/></Private>} />
         <Route path="student/coding/category/:category" element={<Private roles={['student', 'faculty', 'hod']}><ProblemList/></Private>} />
         <Route path="student/coding/problem/:id" element={<Private roles={['student', 'faculty', 'hod']}><HackerRankIDE/></Private>} />
-        <Route path="student/tests" element={<Private roles={['student']}><StudentTests/></Private>} />
-        <Route path="student/coding-tests" element={<Private roles={['student']}><StudentCodingTests/></Private>} />
-        <Route path="student/test/:testId" element={<Private roles={['student']}><TakeTest/></Private>} />
-        <Route path="student/coding-test/:testId" element={<Private roles={['student']}><TakeCodingTest/></Private>} />
+        <Route path="student/tests" element={<Private roles={['student', 'faculty', 'hod']}><StudentTests/></Private>} />
+        <Route path="student/coding-tests" element={<Private roles={['student', 'faculty', 'hod']}><StudentCodingTests/></Private>} />
+        <Route path="student/test/:testId" element={<Private roles={['student', 'faculty', 'hod']}><TakeTest/></Private>} />
+        <Route path="student/coding-test/:testId" element={<Private roles={['student', 'faculty', 'hod']}><TakeCodingTest/></Private>} />
 
         {/* Faculty */}
-        <Route path="faculty" element={<Private roles={['faculty']}><FacultyDashboard/></Private>} />
-        <Route path="faculty/attendance" element={<Private roles={['faculty']}><FacultyAttendance/></Private>} />
+        <Route path="faculty" element={<Private roles={['faculty','hod']}><FacultyDashboard/></Private>} />
+        <Route path="faculty/attendance" element={<Private roles={['faculty','hod']}><FacultyAttendance/></Private>} />
         <Route path="faculty/lab-manuals" element={<Private roles={['faculty','hod']}><FacultyLabManuals/></Private>} />
         <Route path="faculty/mcq-tests" element={<Private roles={['faculty','hod']}><FacultyMcqTests/></Private>} />
-        <Route path="faculty/bookings"   element={<Private roles={['faculty']}><FacultyBookings/></Private>} />
-        <Route path="faculty/complaints" element={<Private roles={['faculty']}><FacultyComplaints/></Private>} />
-        <Route path="faculty/announcements" element={<Private roles={['faculty']}><FacultyAnnouncements/></Private>} />
-        <Route path="faculty/tests" element={<Private roles={['faculty']}><HodTests/></Private>} />
+        <Route path="faculty/bookings"   element={<Private roles={['faculty','hod']}><FacultyBookings/></Private>} />
+        <Route path="faculty/complaints" element={<Private roles={['faculty','hod']}><FacultyComplaints/></Private>} />
+        <Route path="faculty/announcements" element={<Private roles={['faculty','hod']}><FacultyAnnouncements/></Private>} />
+        <Route path="faculty/tests" element={<Private roles={['faculty','hod']}><HodTests/></Private>} />
         <Route path="faculty/coding-results" element={<Private roles={['faculty','hod']}><CodingResults/></Private>} />
         <Route path="faculty/audit" element={<Private roles={['faculty','hod']}><AuditLogs/></Private>} />
 

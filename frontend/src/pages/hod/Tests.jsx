@@ -3,24 +3,71 @@ import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Brain, Clock, Users, CheckCircle2, Sparkles, Loader2 } from 'lucide-react';
+import { Brain, Clock, Users, CheckCircle2, Sparkles, Loader2, BookOpen, GraduationCap } from 'lucide-react';
 
-const SUBJECTS = ['ADA', 'DBMS', 'LATEX', 'MONGODB', 'AI', 'JAVA', 'PYTHON', 'OPERATING SYSTEMS', 'Custom...'];
+// VTU CS Allied Lab Subjects grouped by semester (2022 & 2025 Scheme)
+const SUBJECTS_BY_SEM = {
+  1: ['C PROGRAMMING'],
+  2: ['PYTHON'],
+  3: [
+    'DATA STRUCTURES',
+    'OPERATING SYSTEMS',
+    'JAVA',
+    'C++',
+    'DIGITAL DESIGN & COMPUTER ORGANIZATION',
+    'GIT & VERSION CONTROL',
+    'DATA VISUALIZATION WITH PYTHON',
+  ],
+  4: ['ADA', 'DBMS'],
+  5: ['COMPUTER NETWORKS', 'IOT'],
+  6: ['AI', 'MACHINE LEARNING', 'MONGODB'],
+  7: ['LATEX', 'DSA', 'WEB TECHNOLOGIES'],
+};
+
+const ALL_SUBJECTS = [
+  ...Object.values(SUBJECTS_BY_SEM).flat(),
+  'Custom...',
+];
+
+const SEMESTERS = [1, 2, 3, 4, 5, 6, 7, 8];
+const SCHEMES   = ['2022', '2025'];
+
+const SEM_LABELS = {
+  1: '1st Sem', 2: '2nd Sem', 3: '3rd Sem', 4: '4th Sem',
+  5: '5th Sem', 6: '6th Sem', 7: '7th Sem', 8: '8th Sem',
+};
 
 export default function HodTests() {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const [selectedSubject, setSelectedSubject] = useState('');
-  const [customSubject, setCustomSubject] = useState('');
-  const [duration, setDuration] = useState(10);
-  const [testType, setTestType] = useState('mcq'); // 'mcq' or 'coding'
-  const [tests, setTests] = useState([]);
-  const [generating, setGenerating] = useState(false);
+  const navigate  = useNavigate();
 
-  // Submissions state
-  const [selectedTest, setSelectedTest] = useState(null);
-  const [submissions, setSubmissions] = useState([]);
-  const [submissionsModalOpen, setSubmissionsModalOpen] = useState(false);
+  // Form state
+  const [targetSemester, setTargetSemester] = useState('');
+  const [scheme,         setScheme]         = useState('');
+  const [selectedSubject, setSelectedSubject] = useState('');
+  const [customSubject,   setCustomSubject]   = useState('');
+  const [duration,        setDuration]        = useState(10);
+  const [testType,        setTestType]        = useState('mcq');
+  const [generating,      setGenerating]      = useState(false);
+
+  // Tests list
+  const [tests, setTests] = useState([]);
+
+  // Submissions modal
+  const [selectedTest,          setSelectedTest]          = useState(null);
+  const [submissions,           setSubmissions]           = useState([]);
+  const [submissionsModalOpen,  setSubmissionsModalOpen]  = useState(false);
+
+  // Derive subjects list from chosen semester (or all if none chosen)
+  const subjectsForSem = targetSemester
+    ? [...(SUBJECTS_BY_SEM[parseInt(targetSemester)] || []), 'Custom...']
+    : ALL_SUBJECTS;
+
+  // Reset subject when semester changes so stale subject isn't sent
+  useEffect(() => {
+    setSelectedSubject('');
+    setCustomSubject('');
+  }, [targetSemester]);
 
   const fetchTests = async () => {
     try {
@@ -34,13 +81,23 @@ export default function HodTests() {
   const handleGenerate = async () => {
     const finalSubject = selectedSubject === 'Custom...' ? customSubject.trim() : selectedSubject;
     if (!finalSubject) return toast.error('Please select or enter a subject');
+    if (!targetSemester) return toast.error('Please select a target semester');
+    if (!scheme) return toast.error('Please select a VTU scheme');
+
     setGenerating(true);
     const endpoint = testType === 'coding' ? '/tests/generate-coding' : '/tests/generate';
-    const tid = toast.loading(`Generating ${finalSubject} ${testType === 'coding' ? 'Coding Lab Exam' : 'MCQ Test'}...`);
+    const tid = toast.loading(
+      `Generating ${finalSubject} ${testType === 'coding' ? 'Coding Lab Exam' : 'MCQ Test'} for Sem ${targetSemester}...`
+    );
     try {
-      const res = await api.post(endpoint, { subject: finalSubject, duration });
+      const res = await api.post(endpoint, {
+        subject: finalSubject,
+        duration,
+        target_semester: parseInt(targetSemester, 10),
+        scheme,
+      });
       toast.dismiss(tid);
-      toast.success(res.data.message || `Test created!`);
+      toast.success(res.data.message || 'Test created!');
       fetchTests();
       setSelectedSubject('');
       setCustomSubject('');
@@ -76,8 +133,8 @@ export default function HodTests() {
             <Brain size={24} />
           </div>
           <div>
-            <h2 className="text-xl font-bold">Lab Test & Assessment Generator</h2>
-            <p className="text-sm text-purple-100 mt-0.5">Generate MCQ Tests & Proctored Coding Lab Practical Exams</p>
+            <h2 className="text-xl font-bold">Lab Test &amp; Assessment Generator</h2>
+            <p className="text-sm text-purple-100 mt-0.5">Generate MCQ Tests &amp; Proctored Coding Lab Practical Exams per Semester &amp; Scheme</p>
           </div>
         </div>
       </div>
@@ -87,7 +144,7 @@ export default function HodTests() {
         <h3 className="font-semibold flex items-center gap-2 mb-4">
           <Sparkles size={18} className="text-violet-500" /> Create New Test
         </h3>
-        
+
         {/* Test Type Selector */}
         <div className="flex items-center gap-3 mb-5 p-1 bg-slate-100 dark:bg-slate-800 rounded-xl w-fit border border-slate-200 dark:border-slate-700">
           <button
@@ -108,16 +165,56 @@ export default function HodTests() {
           </button>
         </div>
 
+        {/* Row 1: Semester + Scheme */}
+        <div className="flex flex-wrap items-end gap-4 mb-4">
+          {/* Target Semester */}
+          <div className="w-40">
+            <label className="text-xs font-semibold text-slate-500 flex items-center gap-1 mb-1.5">
+              <GraduationCap size={13} /> Target Semester <span className="text-rose-500">*</span>
+            </label>
+            <select
+              value={targetSemester}
+              onChange={e => setTargetSemester(e.target.value)}
+              className="w-full text-sm bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
+            >
+              <option value="">-- Semester --</option>
+              {SEMESTERS.map(s => (
+                <option key={s} value={s}>Sem {s}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Scheme */}
+          <div className="w-36">
+            <label className="text-xs font-semibold text-slate-500 flex items-center gap-1 mb-1.5">
+              <BookOpen size={13} /> VTU Scheme <span className="text-rose-500">*</span>
+            </label>
+            <select
+              value={scheme}
+              onChange={e => setScheme(e.target.value)}
+              className="w-full text-sm bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
+            >
+              <option value="">-- Scheme --</option>
+              {SCHEMES.map(sc => (
+                <option key={sc} value={sc}>{sc} Scheme</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Row 2: Subject + Duration + Generate */}
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex-1 min-w-[200px]">
-            <label className="text-xs font-semibold text-slate-500 block mb-1.5">Subject</label>
+            <label className="text-xs font-semibold text-slate-500 block mb-1.5">
+              Subject {targetSemester && <span className="text-violet-400">(Sem {targetSemester} subjects)</span>}
+            </label>
             <select
               value={selectedSubject}
               onChange={e => setSelectedSubject(e.target.value)}
               className="w-full text-sm bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
             >
               <option value="">-- Select Subject --</option>
-              {SUBJECTS.map(s => (
+              {subjectsForSem.map(s => (
                 <option key={s} value={s}>{s}</option>
               ))}
             </select>
@@ -147,6 +244,7 @@ export default function HodTests() {
               className="w-full text-sm bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
             />
           </div>
+
           <button
             onClick={handleGenerate}
             disabled={generating}
@@ -156,10 +254,11 @@ export default function HodTests() {
             {generating ? 'Generating...' : testType === 'coding' ? 'Create Coding Test' : 'Generate MCQ Test'}
           </button>
         </div>
+
         <p className="text-[10px] text-slate-400 mt-3">
           {testType === 'coding'
             ? 'Proctored Coding Test mode creates a pool of 10 lab programs. Each student receives 1 question assigned with batch shuffling and Tab Switch Security enabled.'
-            : 'AI will generate 10 multiple-choice questions with 4 options each. Tests are immediately visible to all students.'}
+            : 'AI will generate 10 multiple-choice questions with 4 options each. Only students of the selected semester will see this test.'}
         </p>
       </div>
 
@@ -207,6 +306,24 @@ export default function HodTests() {
                   </span>
                 </div>
 
+                {/* Semester & Scheme badges */}
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  {t.target_semester ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                      <GraduationCap size={9} /> Sem {t.target_semester}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-500/10 text-slate-400 border border-slate-500/20">
+                      All Semesters
+                    </span>
+                  )}
+                  {t.scheme && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                      <BookOpen size={9} /> {t.scheme} Scheme
+                    </span>
+                  )}
+                </div>
+
                 <div className="flex items-center gap-4 text-[11px] text-slate-500 dark:text-slate-400 mb-2">
                   <span className="flex items-center gap-1">
                     <Brain size={13} /> {t.test_type === 'coding' ? '1 Assigned Q (Pool 10)' : `${t.question_count} Q`}
@@ -218,8 +335,10 @@ export default function HodTests() {
                     <Users size={13} /> {t.submission_count} submitted
                   </span>
                 </div>
-                <div className="text-[9px] text-slate-450 dark:text-slate-500 group-hover:text-violet-500 font-semibold transition-colors mt-2 text-right">
-                  Click to view results →
+                <div className="flex items-center justify-end gap-2 mt-3 pt-2.5 border-t border-slate-200/60 dark:border-slate-700/60">
+                  <span className="text-[10px] text-slate-400 group-hover:text-violet-500 font-semibold transition-colors">
+                    View Results ({t.submission_count}) →
+                  </span>
                 </div>
               </div>
             ))}
@@ -232,14 +351,26 @@ export default function HodTests() {
         <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl">
             <div className="bg-gradient-to-r from-violet-600 to-purple-700 p-5 text-white">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-start">
                 <div>
-                  <h3 className="text-base font-bold leading-tight">{selectedTest.subject} MCQ Test Submissions</h3>
+                  <h3 className="text-base font-bold leading-tight">{selectedTest.subject} — Test Submissions</h3>
                   <p className="text-[10px] text-purple-100 mt-1 font-mono">
                     Total submissions: {submissions.length} | Duration: {selectedTest.duration_minutes} min
                   </p>
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                    {selectedTest.target_semester && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-white/20 text-white/90">
+                        <GraduationCap size={9} /> Sem {selectedTest.target_semester}
+                      </span>
+                    )}
+                    {selectedTest.scheme && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-white/20 text-white/90">
+                        <BookOpen size={9} /> {selectedTest.scheme} Scheme
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <button 
+                <button
                   onClick={() => setSubmissionsModalOpen(false)}
                   className="text-white/80 hover:text-white font-bold text-xs bg-white/10 hover:bg-white/20 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer border-0"
                 >
@@ -249,7 +380,7 @@ export default function HodTests() {
             </div>
 
             <div className="p-5 max-h-[450px] overflow-y-auto space-y-4">
-              {/* 🤖 AI Automated Evaluation Summary Banner */}
+              {/* AI Evaluation Banner */}
               <div className="bg-slate-950 p-4 rounded-xl border border-violet-500/30 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-violet-500/20 text-violet-400 border border-violet-500/40 flex items-center justify-center font-bold shrink-0">
@@ -323,7 +454,7 @@ export default function HodTests() {
             </div>
 
             <div className="bg-slate-950 px-4 py-3 border-t border-slate-800 flex justify-end">
-              <button 
+              <button
                 onClick={() => setSubmissionsModalOpen(false)}
                 className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs px-4 py-1.5 rounded-lg transition-colors cursor-pointer"
               >

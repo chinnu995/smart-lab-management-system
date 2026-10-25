@@ -31,7 +31,12 @@ export default function SubjectToppers() {
     ? data.availableSubjects
     : (user?.role === 'faculty'
         ? (user?.subject ? [user.subject] : [])
-        : ['ADA', 'DBMS', 'LATEX', 'MONGODB', 'AI', 'JAVA', 'PYTHON', 'OPERATING SYSTEMS']);
+        : [
+            'ADA', 'DBMS', 'LATEX', 'MONGODB', 'AI', 'JAVA', 'PYTHON', 'OPERATING SYSTEMS',
+            'C PROGRAMMING', 'DATA STRUCTURES', 'C++', 'DIGITAL DESIGN & COMPUTER ORGANIZATION',
+            'COMPUTER NETWORKS', 'IOT', 'MACHINE LEARNING', 'DSA', 'GIT & VERSION CONTROL',
+            'DATA VISUALIZATION WITH PYTHON', 'WEB TECHNOLOGIES'
+          ]);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">

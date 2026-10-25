@@ -4,14 +4,15 @@
   "nonRunnable": [
     "BCS302",
     "1BCS303",
-    "BICL504",
     "BCS601",
     "BCSL657D",
     "BAIL657C",
     "BIS657A",
     "BCS358C",
     "1BCSL307A",
-    "BCSL657B"
+    "BCSL657B",
+    "BCS701",
+    "BCSI802"
   ],
 
   "defaultLanguage": {
@@ -21,6 +22,12 @@
     "BCS306A":  "java",
     "BCS306B":  "cpp",
     "BCS358D":  "python",
-    "BCSL606":  "python"
+    "BCSL606":  "python",
+    "BCSL657B": "javascript",
+    "BCS701":   "cpp",
+    "BCS702":   "c",
+    "BCS714A":  "python",
+    "BCS714D":  "python",
+    "BCSP801":  "python"
   }
 }

@@ -7,7 +7,7 @@ exports.overview = async (_req, res) => {
   const [[e]] = await db.query('SELECT COUNT(*) AS c FROM equipment');
   const [[b]] = await db.query("SELECT COUNT(*) AS c FROM bookings WHERE status='approved'");
   const [[c]] = await db.query("SELECT COUNT(*) AS c FROM complaints WHERE status!='resolved'");
-  const [[a]] = await db.query('SELECT COUNT(*) AS c FROM announcements');
+  const [[a]] = await db.query("SELECT COUNT(*) AS c FROM announcements WHERE created_at >= NOW() - INTERVAL '12 hours'");
   res.json({
     students: Number(s?.c || 0),
     faculty: Number(f?.c || 0),

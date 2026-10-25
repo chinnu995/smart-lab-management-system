@@ -15,7 +15,12 @@ exports.verifyToken = (req, res, next) => {
 };
 
 exports.requireRole = (...roles) => (req, res, next) => {
-  if (!req.user || !roles.includes(req.user.role)) {
+  const allowed = [...roles];
+  // HOD also has full faculty privileges and can access all faculty endpoints
+  if (allowed.includes('faculty') && !allowed.includes('hod')) {
+    allowed.push('hod');
+  }
+  if (!req.user || !allowed.includes(req.user.role)) {
     return res.status(403).json({ message: 'Forbidden: insufficient role' });
   }
   next();

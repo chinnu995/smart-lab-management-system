@@ -29,7 +29,12 @@ export default function StudentRanksWidget() {
 
   const subjects = data.availableSubjects.length > 0
     ? data.availableSubjects
-    : ['ADA', 'DBMS', 'LATEX', 'MONGODB', 'AI', 'JAVA', 'PYTHON', 'OPERATING SYSTEMS'];
+    : [
+        'ADA', 'DBMS', 'LATEX', 'MONGODB', 'AI', 'JAVA', 'PYTHON', 'OPERATING SYSTEMS',
+        'C PROGRAMMING', 'DATA STRUCTURES', 'C++', 'DIGITAL DESIGN & COMPUTER ORGANIZATION',
+        'COMPUTER NETWORKS', 'IOT', 'MACHINE LEARNING', 'DSA', 'GIT & VERSION CONTROL',
+        'DATA VISUALIZATION WITH PYTHON', 'WEB TECHNOLOGIES'
+      ];
 
   return (
     <div className="card p-5 md:p-6 space-y-4">

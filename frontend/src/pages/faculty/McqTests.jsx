@@ -168,7 +168,20 @@ export default function FacultyMcqTests() {
                   required
                 >
                   <option value="">-- Choose Subject --</option>
-                  {['ADA', 'DBMS', 'LATEX', 'MONGODB', 'AI', 'JAVA', 'PYTHON', 'OPERATING SYSTEMS'].map(s => (
+                  {[
+                    // Sem 1 & 2
+                    'C PROGRAMMING', 'PYTHON',
+                    // Sem 3
+                    'DATA STRUCTURES', 'OPERATING SYSTEMS', 'JAVA', 'C++',
+                    'DIGITAL DESIGN & COMPUTER ORGANIZATION',
+                    'GIT & VERSION CONTROL', 'DATA VISUALIZATION WITH PYTHON',
+                    // Sem 4
+                    'ADA', 'DBMS',
+                    // Sem 5
+                    'COMPUTER NETWORKS', 'IOT',
+                    // Allied
+                    'AI', 'MACHINE LEARNING', 'MONGODB', 'LATEX', 'DSA', 'WEB TECHNOLOGIES'
+                  ].map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>

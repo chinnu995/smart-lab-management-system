@@ -39,6 +39,7 @@ export default function Announcements() {
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('general');
   const [targetRole, setTargetRole] = useState('all');
+  const [targetSemester, setTargetSemester] = useState('');
   const [isPinned, setIsPinned] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -77,6 +78,7 @@ export default function Announcements() {
         content: content.trim(),
         category,
         target_role: targetRole,
+        target_semester: targetSemester ? parseInt(targetSemester, 10) : null,
         is_pinned: isPinned
       });
       toast.dismiss(toastId);
@@ -86,6 +88,7 @@ export default function Announcements() {
       setContent('');
       setCategory('general');
       setTargetRole('all');
+      setTargetSemester('');
       setIsPinned(false);
       load();
     } catch (err) {
@@ -309,6 +312,19 @@ export default function Announcements() {
                   </select>
                 </div>
 
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Target Semester</label>
+                  <select
+                    className="input text-xs font-medium"
+                    value={targetSemester}
+                    onChange={e => setTargetSemester(e.target.value)}
+                  >
+                    <option value="">All Semesters</option>
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map(s => (
+                      <option key={s} value={s}>Semester {s}</option>
+                    ))}
+                  </select>
+                </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Target Audience</label>
                   <select

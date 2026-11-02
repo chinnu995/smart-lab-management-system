@@ -294,7 +294,9 @@ exports.forgotPassword = async (req, res) => {
       subject: 'Smart Lab — Password Reset',
       html: `<p>Hi ${rows[0].full_name},</p><p>Reset your password: <a href="${link}">${link}</a></p>`,
     });
-    const isDev = process.env.NODE_ENV !== 'production' && (process.env.NODE_ENV === 'development' || !process.env.SMTP_USER || process.env.SMTP_USER.includes('your_email@gmail.com'));
+    const emailUser = process.env.GMAIL_USER || process.env.SMTP_USER;
+    const hasEmailConfig = emailUser && !emailUser.includes('your_');
+    const isDev = process.env.NODE_ENV !== 'production' && (process.env.NODE_ENV === 'development' || !hasEmailConfig);
     res.json({
       message: 'A password reset link has been sent to your email.',
       resetLink: isDev ? link : undefined

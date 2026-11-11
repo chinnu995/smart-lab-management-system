@@ -4,8 +4,15 @@ import toast from 'react-hot-toast';
 
 export default function FacultyComplaints() {
   const [items, setItems] = useState([]);
-  const load = () => api.get('/complaints').then(r => setItems(r.data));
-  useEffect(load, []);
+  const load = () => {
+    api.get('/complaints').then(r => setItems(r.data)).catch(err => {
+      toast.error(err.response?.data?.message || 'Failed to load complaints');
+    });
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
   const update = async (id, status) => {
     try { await api.put(`/complaints/${id}`, { status }); toast.success('Updated'); load(); }
     catch (e) { toast.error(e.response?.data?.message); }

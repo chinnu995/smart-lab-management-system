@@ -6,8 +6,15 @@ export default function Faculty() {
   const [items, setItems] = useState([]);
   const [show, setShow] = useState(false);
   const [form, setForm] = useState({ full_name:'', email:'', password:'', phone:'', emp_code:'', department:'Computer Science', designation:'Assistant Professor' });
-  const load = () => api.get('/faculty').then(r => setItems(r.data));
-  useEffect(load, []);
+  const load = () => {
+    api.get('/faculty').then(r => setItems(r.data)).catch(err => {
+      toast.error(err.response?.data?.message || 'Failed to load faculty');
+    });
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
   const submit = async (e) => {
     e.preventDefault();
     try { await api.post('/faculty', form); toast.success('Faculty added'); setShow(false); load(); }

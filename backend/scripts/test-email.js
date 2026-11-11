@@ -7,7 +7,7 @@
  */
 
 require('dotenv').config();
-const { sendMail } = require('../src/services/emailService');
+const { sendMail, isEmailConfigured } = require('../src/services/emailService');
 
 const recipient = process.argv[2];
 if (!recipient || !recipient.includes('@')) {
@@ -20,9 +20,9 @@ const HTML = `
 <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; max-width: 480px;">
   <h2 style="color: #2563eb;">PESITM Smart Lab — Email Test</h2>
   <p>This is a diagnostic test email sent at <strong>${new Date().toISOString()}</strong>.</p>
-  <p style="color: #64748b; font-size: 13px;">If you received this, Gmail SMTP is working correctly. ✓</p>
+  <p style="color: #64748b; font-size: 13px;">If you received this, your email configuration is working correctly. ✓</p>
 </div>`;
-const TEXT = `PESITM Smart Lab — Email Test\nSent at: ${new Date().toISOString()}\nIf you received this, Gmail SMTP is working correctly.`;
+const TEXT = `PESITM Smart Lab — Email Test\nSent at: ${new Date().toISOString()}\nIf you received this, email is working correctly.`;
 
 async function run() {
   console.log('\n══════════════════════════════════════════════');
@@ -32,48 +32,50 @@ async function run() {
   console.log(`  Timestamp : ${new Date().toISOString()}`);
   console.log('──────────────────────────────────────────────\n');
 
+  const resendApiKey = process.env.RESEND_API_KEY;
+  const resendFrom = process.env.RESEND_FROM || 'PESITM Smart Lab <onboarding@resend.dev>';
   const user = process.env.GMAIL_USER || process.env.SMTP_USER;
   const pass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS;
-  const host = process.env.SMTP_HOST || 'smtp.gmail.com';
-  const port = process.env.SMTP_PORT || '465';
 
   console.log('📋 Configuration:');
-  console.log(`   SMTP_HOST           : ${host}`);
-  console.log(`   SMTP_PORT           : ${port}`);
-  console.log(`   SMTP_USER           : ${user || '✗ NOT SET'}`);
-  console.log(`   SMTP_PASS           : ${pass ? (pass.replace(/\s+/g, '') === 'xxxxxxxxxxxxxxxx' ? '✗ placeholder — set a real App Password' : '✓ set') : '✗ NOT SET'}`);
+  if (resendApiKey) {
+    const maskedKey = resendApiKey.substring(0, 7) + '...' + resendApiKey.substring(resendApiKey.length - 4);
+    console.log(`   Provider            : Resend SDK (Primary)`);
+    console.log(`   RESEND_API_KEY      : ${maskedKey}`);
+    console.log(`   RESEND_FROM         : ${resendFrom}`);
+  } else {
+    console.log(`   RESEND_API_KEY      : ✗ NOT SET`);
+  }
+
+  if (user && pass) {
+    console.log(`   SMTP Fallback       : Enabled (${user})`);
+  } else {
+    console.log(`   SMTP Fallback       : Not configured`);
+  }
   console.log('');
 
-  if (!user || !pass) {
+  if (!isEmailConfigured()) {
     console.error('❌ Cannot send — credentials missing. Add to backend/.env:\n');
-    console.error('   GMAIL_USER=your@gmail.com');
-    console.error('   GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx\n');
-    console.error('Setup steps:');
-    console.error('  1. Enable 2-Step Verification → https://myaccount.google.com/security');
-    console.error('  2. Create App Password       → https://myaccount.google.com/apppasswords\n');
+    console.error('   RESEND_API_KEY=re_your_api_key\n');
     process.exit(1);
   }
 
-  console.log(`📤 Sending test email via SMTP (${host}:${port} with auto-fallback) ...`);
+  console.log(`📤 Sending test email to ${recipient}...`);
   try {
     const result = await sendMail({ to: recipient, subject: SUBJECT, html: HTML, text: TEXT });
     console.log(`\n✅ SUCCESS`);
-    console.log(`   Provider   : ${result.provider}`);
+    console.log(`   Provider   : ${result.provider.toUpperCase()}`);
     console.log(`   Message ID : ${result.messageId}`);
     console.log('\n→ Check your inbox (and Spam/Junk folder) for the test email.\n');
   } catch (err) {
     console.error(`\n❌ FAILED: ${err.message}\n`);
 
-    if (err.message?.includes('Invalid login') || err.message?.includes('Username and Password') || err.responseCode === 535) {
-      console.error('Fix: Invalid email credentials. For Gmail, you must use a 16-character App Password, NOT your regular password.');
-      console.error('  1. Enable 2-Step Verification → https://myaccount.google.com/security');
-      console.error('  2. Create App Password       → https://myaccount.google.com/apppasswords');
-    } else if (err.message?.includes('ECONNREFUSED') || err.message?.includes('ETIMEDOUT') || err.message?.includes('network')) {
-      console.error(`Fix: Cannot connect to ${host}:${port}. Your network may block outbound SMTP traffic.`);
-      console.error('  → Try setting SMTP_PORT=587 (or SMTP_PORT=465) in backend/.env.');
-      console.error('  → If on mobile hotspot or restricted WiFi, check firewall settings.');
-    } else if (err.message?.includes('not configured')) {
-      console.error('Fix: Set GMAIL_USER and GMAIL_APP_PASSWORD (or SMTP_USER and SMTP_PASS) in backend/.env');
+    if (err.message?.includes('only send testing emails to your own email address') || err.message?.includes('validation_error')) {
+      console.error('Notice: On the Resend free tier without a verified custom domain, emails can only be sent');
+      console.error('to the email address associated with your Resend account, or you can verify a custom domain at:');
+      console.error('  → https://resend.com/domains\n');
+    } else if (err.message?.includes('Invalid login') || err.message?.includes('Username and Password') || err.responseCode === 535) {
+      console.error('Fix: Invalid SMTP credentials.');
     }
     process.exit(1);
   }

@@ -294,16 +294,19 @@ exports.forgotPassword = async (req, res) => {
       subject: 'Smart Lab — Password Reset',
       html: `<p>Hi ${rows[0].full_name},</p><p>Reset your password: <a href="${link}">${link}</a></p>`,
     });
-    const emailUser = process.env.GMAIL_USER || process.env.SMTP_USER;
-    const hasEmailConfig = emailUser && !emailUser.includes('your_');
-    const isDev = process.env.NODE_ENV !== 'production' && (process.env.NODE_ENV === 'development' || !hasEmailConfig);
+    const emailConfigured = Boolean(
+      (process.env.RESEND_API_KEY && !process.env.RESEND_API_KEY.includes('your_')) ||
+      (process.env.GMAIL_USER && !process.env.GMAIL_USER.includes('your_')) ||
+      (process.env.SMTP_USER && !process.env.SMTP_USER.includes('your_'))
+    );
+    const isDev = process.env.NODE_ENV !== 'production' && (process.env.NODE_ENV === 'development' || !emailConfigured);
     res.json({
       message: 'A password reset link has been sent to your email.',
       resetLink: isDev ? link : undefined
     });
   } catch (err) {
     console.error('Failed to send reset email:', err);
-    res.status(500).json({ message: 'Failed to send password reset link email. Please check your SMTP configuration.' });
+    res.status(500).json({ message: 'Failed to send password reset link email. Please check your email configuration.' });
   }
 };
 

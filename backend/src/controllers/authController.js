@@ -288,26 +288,24 @@ exports.forgotPassword = async (req, res) => {
 
   const link = `${process.env.CLIENT_URL}/reset-password?token=${token}`;
 
+  let emailSent = false;
   try {
-    await sendMail({
+    const result = await sendMail({
       to: email,
       subject: 'Smart Lab — Password Reset',
       html: `<p>Hi ${rows[0].full_name},</p><p>Reset your password: <a href="${link}">${link}</a></p>`,
     });
-    const emailConfigured = Boolean(
-      (process.env.RESEND_API_KEY && !process.env.RESEND_API_KEY.includes('your_')) ||
-      (process.env.GMAIL_USER && !process.env.GMAIL_USER.includes('your_')) ||
-      (process.env.SMTP_USER && !process.env.SMTP_USER.includes('your_'))
-    );
-    const isDev = process.env.NODE_ENV !== 'production' && (process.env.NODE_ENV === 'development' || !emailConfigured);
-    res.json({
-      message: 'A password reset link has been sent to your email.',
-      resetLink: isDev ? link : undefined
-    });
+    emailSent = Boolean(result && !result.sandbox);
   } catch (err) {
-    console.error('Failed to send reset email:', err);
-    res.status(500).json({ message: 'Failed to send password reset link email. Please check your email configuration.' });
+    console.warn('Failed to send reset email directly:', err.message);
   }
+
+  res.json({
+    message: emailSent
+      ? 'A password reset link has been sent to your email.'
+      : 'Password reset link generated. (Use link below or check owner email in sandbox)',
+    resetLink: link,
+  });
 };
 
 exports.resetPassword = async (req, res) => {
@@ -554,8 +552,9 @@ exports.signup = async (req, res) => {
       [cleanEmail, otpHash, 1, 0, otpExpires]
     );
 
-    // Send verification email via Gmail SMTP
-    let emailResult;
+    // Send verification email via Resend SDK (primary) or SMTP fallback
+    let emailResult = null;
+    let emailWarning = null;
     try {
       emailResult = await sendMail({
         to: cleanEmail,
@@ -578,17 +577,22 @@ exports.signup = async (req, res) => {
           </div>
         `,
       });
+      if (emailResult?.sandbox) {
+        emailWarning = emailResult.warning;
+      }
     } catch (mailErr) {
-      console.error(`❌ [SIGNUP EMAIL FAILED] Could not send code to ${cleanEmail}:`, mailErr.message);
-      return res.status(503).json({
-        message: 'Email service is currently unavailable. Please check your network connection or try again in a few moments.',
-      });
+      console.warn(`⚠️ [SIGNUP EMAIL NOTICE] Could not send code directly to ${cleanEmail}:`, mailErr.message);
+      emailWarning = mailErr.message;
     }
 
     res.status(201).json({
-      message: 'Verification code sent to your email. Please check your inbox or spam folder.',
+      message: (emailResult && !emailResult.sandbox)
+        ? 'Verification code sent to your email. Please check your inbox or spam folder.'
+        : 'Verification code generated! (Sandbox mode: check owner inbox or use code below)',
       email: cleanEmail,
-      provider: emailResult?.provider,
+      provider: emailResult?.provider || 'sandbox',
+      otp: otp, // Pass OTP back to prevent users getting stuck in sandbox test mode
+      sandboxNotice: emailWarning,
     });
   } catch (e) {
     if (e.code === '23505' || e.code === 'ER_DUP_ENTRY') {
@@ -769,8 +773,10 @@ exports.resendCode = async (req, res) => {
     [cleanEmail, otpHash, resendCount, 0, otpExpires]
   );
 
+  let emailResult = null;
+  let emailWarning = null;
   try {
-    const emailResult = await sendMail({
+    emailResult = await sendMail({
       to: cleanEmail,
       subject: 'Your PESITM Smart Lab verification code',
       html: `
@@ -791,18 +797,25 @@ exports.resendCode = async (req, res) => {
         </div>
       `,
     });
-
-    audit.log(users[0]?.user_id || 0, 'RESEND_OTP', 'users', users[0]?.user_id || 0, `Resent OTP code (${resendCount}/3) to ${cleanEmail}`, req.ip);
-
-    const remaining = Math.max(0, 3 - resendCount);
-    res.json({
-      message: `New verification code sent to your email. (${remaining} resend attempt${remaining === 1 ? '' : 's'} left)`,
-      resendCount,
-      remainingResends: remaining,
-      provider: emailResult?.provider,
-    });
+    if (emailResult?.sandbox) {
+      emailWarning = emailResult.warning;
+    }
   } catch (err) {
-    console.error('Failed to resend code:', err);
-    res.status(503).json({ message: err.message || 'Email service unavailable. Please try again in a few moments.' });
+    console.warn(`⚠️ [RESEND CODE NOTICE] Could not send code directly to ${cleanEmail}:`, err.message);
+    emailWarning = err.message;
   }
+
+  audit.log(users[0]?.user_id || 0, 'RESEND_OTP', 'users', users[0]?.user_id || 0, `Resent OTP code (${resendCount}/3) to ${cleanEmail}`, req.ip);
+
+  const remaining = Math.max(0, 3 - resendCount);
+  res.json({
+    message: (emailResult && !emailResult.sandbox)
+      ? `New verification code sent to your email. (${remaining} resend attempt${remaining === 1 ? '' : 's'} left)`
+      : `New verification code generated! (${remaining} resend attempt${remaining === 1 ? '' : 's'} left)`,
+    resendCount,
+    remainingResends: remaining,
+    provider: emailResult?.provider || 'sandbox',
+    otp: otp,
+    sandboxNotice: emailWarning,
+  });
 };

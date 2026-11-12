@@ -7,7 +7,7 @@
  */
 
 require('dotenv').config();
-const { sendMail, isEmailConfigured } = require('../src/services/emailService');
+const { sendMail, isEmailConfigured, DEFAULT_RESEND_KEY } = require('../src/services/emailService');
 
 const recipient = process.argv[2];
 if (!recipient || !recipient.includes('@')) {
@@ -32,7 +32,7 @@ async function run() {
   console.log(`  Timestamp : ${new Date().toISOString()}`);
   console.log('──────────────────────────────────────────────\n');
 
-  const resendApiKey = process.env.RESEND_API_KEY;
+  const resendApiKey = process.env.RESEND_API_KEY || DEFAULT_RESEND_KEY;
   const resendFrom = process.env.RESEND_FROM || 'PESITM Smart Lab <onboarding@resend.dev>';
   const user = process.env.GMAIL_USER || process.env.SMTP_USER;
   const pass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS;

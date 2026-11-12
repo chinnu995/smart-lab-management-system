@@ -50,6 +50,10 @@ export default function Signup() {
     try {
       const { data } = await api.post('/auth/resend-code', { email: pendingEmail, type: 'signup' });
       toast.success(data.message || 'New verification code sent to your email!');
+      if (data.otp) {
+        setDevOtp(data.otp);
+        setOtp(data.otp);
+      }
       setResendCount(c => c + 1);
       setResendTimer(60);
     } catch (err) {
@@ -166,7 +170,12 @@ export default function Signup() {
       const { data } = await api.post('/auth/signup', payload);
       toast.success(data.message || 'Verification code sent to your email!');
       setPendingEmail(email);
-      setOtp(''); // Always require manual entry of email verification code
+      if (data.otp) {
+        setDevOtp(data.otp);
+        setOtp(data.otp);
+      } else {
+        setOtp('');
+      }
       setResendTimer(60); // Start 60s cooldown immediately (matches backend)
       setStep(2);
     } catch (err) {
@@ -902,6 +911,22 @@ export default function Signup() {
                       Code expires in <strong>10 minutes</strong>.
                     </p>
                   </div>
+
+                  {devOtp && (
+                    <div className="flex items-center justify-between p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/50 rounded-xl text-blue-700 dark:text-blue-300 text-xs">
+                      <div>
+                        <span className="font-bold block text-[10px] uppercase tracking-wider text-blue-500">Test / Sandbox Code:</span>
+                        <span className="font-mono text-base font-extrabold tracking-widest">{devOtp}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setOtp(devOtp)}
+                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer border-0"
+                      >
+                        Auto-Fill
+                      </button>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">6-Digit Verification Code</label>

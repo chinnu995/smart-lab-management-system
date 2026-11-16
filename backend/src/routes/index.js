@@ -19,7 +19,6 @@ const experiment   = require('../controllers/experimentController');
 const testController = require('../controllers/testController');
 const rankController = require('../controllers/rankController');
 const kahoot = require('../controllers/kahootController');
-const { sendMail } = require('../services/emailService');
 
 const multer = require('multer');
 const path = require('path');
@@ -55,19 +54,6 @@ router.post('/auth/verify-code', auth.verifyCode);
 router.post('/auth/signup', auth.signup);
 router.post('/auth/verify-signup', auth.verifySignupCode);
 router.post('/auth/resend-code', auth.resendCode);
-router.get('/auth/email-diagnostic', async (req, res) => {
-  const to = req.query.to || 'kirankirankumarr15@gmail.com';
-  try {
-    const result = await sendMail({
-      to,
-      subject: 'PESITM Smart Lab — Live Diagnostic',
-      html: '<p>Testing email delivery from server</p>'
-    });
-    res.json({ success: true, result });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
 
 // ---- STUDENTS ----
 router.get   ('/students',            verifyToken, requireRole('hod','faculty'), student.list);

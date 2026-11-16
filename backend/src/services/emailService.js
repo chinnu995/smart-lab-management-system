@@ -6,6 +6,8 @@ const nodemailer = require('nodemailer');
 const DEFAULT_RESEND_KEY = Buffer.from('cmVfZ3M3SmRoeGRfNGd5QVZXY29HU2cya2tKdE1pcDE5dVRx', 'base64').toString('utf8');
 const DEFAULT_RESEND_FROM = 'PESITM Smart Lab <onboarding@resend.dev>';
 const RESEND_OWNER_EMAIL = 'chinmayhegde2511@gmail.com';
+const DEFAULT_SMTP_USER = Buffer.from('Y2hpbm1heWhlZ2RlMjUxMUBnbWFpbC5jb20=', 'base64').toString('utf8');
+const DEFAULT_SMTP_PASS = Buffer.from('dXJxdXV1Z2JrYm5mdGFscQ==', 'base64').toString('utf8');
 
 /**
  * Returns a configured Resend client instance if RESEND_API_KEY is present and valid.
@@ -23,8 +25,9 @@ function getResendClient() {
  * Normalizes credentials and extracts user/pass from SMTP environment variables.
  */
 function getEmailCredentials() {
-  const user = process.env.GMAIL_USER || process.env.SMTP_USER;
-  const pass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').replace(/\s+/g, '');
+  const user = process.env.GMAIL_USER || process.env.SMTP_USER || DEFAULT_SMTP_USER;
+  const rawPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || DEFAULT_SMTP_PASS || '';
+  const pass = rawPass.replace(/\s+/g, '');
 
   const isInvalid =
     !user ||
@@ -43,19 +46,22 @@ function getEmailCredentials() {
 function getFromAddress(provider = 'resend', smtpUser = null) {
   const senderName = process.env.SENDER_NAME || 'PESITM Smart Lab';
 
-  if (process.env.RESEND_FROM && !process.env.RESEND_FROM.includes('your_')) {
-    return process.env.RESEND_FROM;
+  if (provider === 'resend') {
+    if (process.env.RESEND_FROM && !process.env.RESEND_FROM.includes('your_')) {
+      return process.env.RESEND_FROM;
+    }
+    return DEFAULT_RESEND_FROM;
+  }
+
+  // SMTP provider
+  const user = smtpUser || getEmailCredentials()?.user || RESEND_OWNER_EMAIL;
+  if (process.env.SMTP_FROM && !process.env.SMTP_FROM.includes('your_gmail@gmail.com') && !process.env.SMTP_FROM.includes('your_')) {
+    return process.env.SMTP_FROM;
   }
   if (process.env.MAIL_FROM && !process.env.MAIL_FROM.includes('your_gmail@gmail.com') && !process.env.MAIL_FROM.includes('your_')) {
     return process.env.MAIL_FROM;
   }
-  if (provider === 'resend') {
-    return DEFAULT_RESEND_FROM;
-  }
-  if (process.env.SMTP_FROM && !process.env.SMTP_FROM.includes('your_gmail@gmail.com')) {
-    return process.env.SMTP_FROM;
-  }
-  return smtpUser ? `"${senderName}" <${smtpUser}>` : DEFAULT_RESEND_FROM;
+  return user ? `"${senderName}" <${user}>` : DEFAULT_RESEND_FROM;
 }
 
 /**
@@ -152,13 +158,30 @@ async function sendMail({ to, subject, html, text }) {
   const smtpCreds = getEmailCredentials();
   const recipients = Array.isArray(to) ? to : [to];
 
-  // 1. Resend SDK (Primary)
-  if (resend) {
-    const from = getFromAddress('resend');
+  // Detect if Resend is in unverified testing mode (@resend.dev)
+  const resendFrom = getFromAddress('resend');
+  const isResendTestingDomain = resendFrom.includes('@resend.dev');
+  const hasExternalRecipients = recipients.some(
+    r => String(r).toLowerCase().trim() !== RESEND_OWNER_EMAIL.toLowerCase().trim()
+  );
 
+  // If using unverified Resend domain (@resend.dev) and recipient is external (e.g. user's friend),
+  // Resend will reject with "You can only send testing emails to your own email address".
+  // Route directly via SMTP (Gmail) for guaranteed delivery.
+  if (isResendTestingDomain && hasExternalRecipients && smtpCreds) {
+    console.log(`ℹ️ External recipient (${recipients.join(', ')}) detected with Resend test domain. Routing directly via SMTP...`);
+    try {
+      return await sendViaSmtp({ to, subject, html, text: cleanText, creds: smtpCreds });
+    } catch (directSmtpErr) {
+      console.warn(`⚠️ Direct SMTP route failed: ${directSmtpErr.message}. Attempting Resend SDK fallback...`);
+    }
+  }
+
+  // 1. Resend SDK
+  if (resend) {
     try {
       const response = await resend.emails.send({
-        from,
+        from: resendFrom,
         to: recipients,
         subject,
         html,
@@ -180,38 +203,9 @@ async function sendMail({ to, subject, html, text }) {
     } catch (resendErr) {
       console.warn(`⚠️ Resend SDK send failed: ${resendErr.message}`);
 
-      const isDomainRestriction =
-        resendErr.message?.includes('only send testing emails to your own email address') ||
-        resendErr.message?.includes('verify a domain') ||
-        resendErr.message?.includes('testing emails');
-
-      // If restricted because domain is not verified, notify the verified admin inbox
-      if (isDomainRestriction) {
-        console.log(`ℹ️ Resend sandbox limitation: forwarding notification to admin (${RESEND_OWNER_EMAIL})...`);
-        try {
-          await resend.emails.send({
-            from,
-            to: [RESEND_OWNER_EMAIL],
-            subject: `[Smart Lab Sandbox] Verification for ${recipients.join(', ')}: ${subject}`,
-            html: `
-              <div style="font-family: Arial, sans-serif; padding: 16px; border: 1px solid #cbd5e1; border-radius: 8px;">
-                <p style="background: #f1f5f9; color: #334155; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-top: 0;">
-                  <strong>Resend Sandbox Notice:</strong> Recipient <code>${recipients.join(', ')}</code> is outside the verified domain. Delivered to owner account.
-                </p>
-                ${html}
-              </div>
-            `,
-            text: `[Sandbox Notice for ${recipients.join(', ')}]\n\n${cleanText}`,
-          });
-          console.log(`✓ Admin sandbox notification delivered to ${RESEND_OWNER_EMAIL}`);
-        } catch (copyErr) {
-          console.warn(`⚠️ Could not deliver admin sandbox copy: ${copyErr.message}`);
-        }
-      }
-
       // Try quick SMTP fallback
       if (smtpCreds) {
-        console.log(`ℹ️ Attempting quick SMTP fallback for ${to}...`);
+        console.log(`ℹ️ Attempting quick SMTP fallback for ${recipients.join(', ')}...`);
         try {
           return await sendViaSmtp({ to, subject, html, text: cleanText, creds: smtpCreds });
         } catch (smtpErr) {
@@ -219,28 +213,16 @@ async function sendMail({ to, subject, html, text }) {
         }
       }
 
-      // If it was a Resend sandbox restriction, succeed gracefully with sandbox flag
-      if (isDomainRestriction) {
-        return {
-          success: true,
-          provider: 'resend_sandbox',
-          sandbox: true,
-          warning: resendErr.message,
-          messageId: `sandbox_${Date.now()}`,
-          id: `sandbox_${Date.now()}`,
-        };
-      }
-
       throw new Error(`Email delivery failed: ${resendErr.message}`);
     }
   }
 
-  // 2. SMTP Fallback
+  // 2. SMTP Fallback (if Resend not configured)
   if (smtpCreds) {
     return await sendViaSmtp({ to, subject, html, text: cleanText, creds: smtpCreds });
   }
 
-  throw new Error('Email credentials not configured. Please set RESEND_API_KEY in backend/.env');
+  throw new Error('Email credentials not configured. Please set RESEND_API_KEY or SMTP credentials in backend/.env');
 }
 
 /**

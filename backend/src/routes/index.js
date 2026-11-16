@@ -142,7 +142,7 @@ router.get('/analytics/equipment',     verifyToken, requireRole('hod','faculty')
 router.get('/analytics/complaints',    verifyToken, requireRole('hod','faculty'), analytics.complaintResolution);
 router.get('/analytics/heatmap',       verifyToken, requireRole('hod','faculty'), analytics.heatmap);
 router.get('/analytics/faculty-perf',  verifyToken, requireRole('hod'),          analytics.facultyPerformance);
-router.get('/analytics/class-performance', verifyToken, requireRole('hod','faculty'), rankController.getClassPerformance);
+router.get('/analytics/class-performance', verifyToken, requireRole('hod','faculty','student'), rankController.getClassPerformance);
 
 // ---- RANKS / LEADERBOARD ----
 router.get('/ranks/leaderboard', verifyToken, rankController.getSubjectRanks);
@@ -168,7 +168,7 @@ router.get ('/tests/active/:studentId',   verifyToken, testController.listActive
 router.get ('/tests/:testId/submissions',  verifyToken, requireRole('hod','faculty'), testController.getTestSubmissions);
 router.get ('/tests/:testId/my-result',   verifyToken, requireRole('student'), testController.getMyTestResult);
 router.post('/tests/malpractice-log',     verifyToken, requireRole('student'), testController.logMalpractice);
-router.get ('/tests/coding/:testId',       verifyToken, requireRole('student'), testController.getCodingTestDetails);
+router.get ('/tests/coding/:testId',       verifyToken, requireRole('student','faculty','hod'), testController.getCodingTestDetails);
 router.post('/tests/coding/:testId/submit', verifyToken, requireRole('student'), testController.submitCodingTest);
 router.get ('/tests/:testId',             verifyToken, testController.getTestDetails);
 router.post('/tests/:testId/submit',      verifyToken, requireRole('student'), testController.submitTest);

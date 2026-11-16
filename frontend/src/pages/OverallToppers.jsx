@@ -13,7 +13,8 @@ export default function OverallToppers() {
       .finally(() => setLoading(false));
   }, []);
 
-  const { overall, classToppers } = data;
+  const overall = data?.overall || {};
+  const classToppers = Array.isArray(data?.classToppers) ? data.classToppers : [];
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">

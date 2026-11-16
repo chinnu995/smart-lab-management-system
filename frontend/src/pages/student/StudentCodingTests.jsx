@@ -33,13 +33,12 @@ export default function StudentCodingTests() {
 
     // Listen for new test creation via socket
     const s = getSocket();
-    s.on('coding-test:new', () => {
-      fetchCodingTests();
-    });
-
-    return () => {
-      s.off('coding-test:new');
-    };
+    if (s) {
+      s.on('coding-test:new', fetchCodingTests);
+      return () => {
+        s.off('coding-test:new', fetchCodingTests);
+      };
+    }
   }, [user]);
 
   const startTest = (testId) => {

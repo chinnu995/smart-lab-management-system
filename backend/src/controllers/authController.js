@@ -105,41 +105,35 @@ exports.register = async (req, res) => {
 exports.me = async (req, res) => {
   try {
     const [rows] = await db.execute(
-      `SELECT u.user_id, u.full_name, u.email, u.role, u.phone, u.profile_image, u.scheme_id, u.dept AS user_dept, u.semester AS user_sem, u.cycle AS user_cycle,
+      `SELECT u.user_id, u.full_name, u.email, u.role, u.phone, u.profile_image,
               s.usn, s.semester, s.batch_year, s.department AS student_dept, s.scheme AS student_scheme, s.cycle AS student_cycle,
-              f.emp_code, f.department AS faculty_dept, f.subject AS faculty_subject, f.scheme AS faculty_scheme,
-              sch.name AS scheme_name
+              f.emp_code, f.department AS faculty_dept, f.subject AS faculty_subject, f.scheme AS faculty_scheme
        FROM users u
        LEFT JOIN students s ON u.user_id = s.user_id
        LEFT JOIN faculty f ON u.user_id = f.user_id
-       LEFT JOIN schemes sch ON u.scheme_id = sch.id
        WHERE u.user_id=?`,
       [req.user.id]
     );
     const u = rows[0] || null;
     if (u) {
       u.department = u.role === 'student'
-        ? (u.student_dept || u.user_dept || 'Computer Science & Engineering')
+        ? (u.student_dept || 'Computer Science & Engineering')
         : u.role === 'faculty'
-        ? (u.faculty_dept || u.user_dept || 'Computer Science & Engineering')
+        ? (u.faculty_dept || 'Computer Science & Engineering')
         : 'Computer Science & Engineering';
       u.scheme = u.role === 'student'
-        ? (u.student_scheme || u.scheme_name || null)
-        : (u.faculty_scheme || u.scheme_name || null);
+        ? (u.student_scheme || null)
+        : (u.faculty_scheme || null);
       if (u.role === 'student') {
-        u.semester = u.semester || u.user_sem || 1;
-        u.cycle = u.student_cycle || u.user_cycle || null;
+        u.semester = u.semester || 1;
+        u.cycle = u.student_cycle || null;
       }
       u.subject = u.faculty_subject || null;
       delete u.student_dept;
       delete u.faculty_dept;
       delete u.student_scheme;
       delete u.faculty_scheme;
-      delete u.user_dept;
-      delete u.user_sem;
-      delete u.scheme_name;
       delete u.student_cycle;
-      delete u.user_cycle;
     }
     res.json(u);
   } catch (err) {
@@ -300,11 +294,17 @@ exports.forgotPassword = async (req, res) => {
     console.warn('Failed to send reset email directly:', err.message);
   }
 
+  if (process.env.NODE_ENV === 'development' && !emailSent) {
+    return res.json({
+      message: 'Password reset link generated (development mode).',
+      resetLink: link,
+    });
+  }
+
   res.json({
     message: emailSent
-      ? 'A password reset link has been sent to your email.'
-      : 'Password reset link generated. (Use link below or check owner email in sandbox)',
-    resetLink: link,
+      ? 'A password reset link has been sent to your email address.'
+      : 'If an account exists with that email, a password reset link has been sent.',
   });
 };
 

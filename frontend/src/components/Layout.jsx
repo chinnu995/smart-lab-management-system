@@ -187,6 +187,7 @@ export default function Layout() {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const activeTag = document.activeElement?.tagName?.toLowerCase();
       if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select' || document.activeElement?.isContentEditable) {
         return;

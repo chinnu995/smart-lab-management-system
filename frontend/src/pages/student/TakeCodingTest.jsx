@@ -45,6 +45,8 @@ export default function TakeCodingTest() {
   const [warningCount, setWarningCount] = useState(0);
   const [malpracticeModal, setMalpracticeModal] = useState({ open: false, reason: '', count: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const isSelectingFileRef = useRef(false);
+  const submitRef = useRef(null);
 
   const requestFullscreen = () => {
     if (document.documentElement.requestFullscreen) {
@@ -99,8 +101,10 @@ export default function TakeCodingTest() {
       setTimeLeft(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          toast.error('⏰ Time limit reached! Auto-submitting your coding test solution now...');
-          handleSubmitCode();
+          setTimeout(() => {
+            toast.error('⏰ Time limit reached! Auto-submitting your coding test solution now...');
+            if (submitRef.current) submitRef.current();
+          }, 0);
           return 0;
         }
         return prev - 1;
@@ -169,6 +173,7 @@ export default function TakeCodingTest() {
       setSubmitting(false);
     }
   };
+  submitRef.current = handleSubmitCode;
 
   // Tab Switch & Proctoring Security Listener
   useEffect(() => {
@@ -196,7 +201,7 @@ export default function TakeCodingTest() {
             if (document.exitFullscreen && document.fullscreenElement) {
               document.exitFullscreen().catch(() => {});
             }
-            handleSubmitCode();
+            if (submitRef.current) submitRef.current();
           }
         } else {
           setMalpracticeModal({ open: true, reason, count: newCount });
@@ -221,6 +226,7 @@ export default function TakeCodingTest() {
     };
 
     const handleBlur = () => {
+      if (isSelectingFileRef.current) return;
       if (!submissionResult) {
         reportMalpractice('Window Focus Lost (Alt-Tab / External App) during Coding Test');
       }
@@ -259,10 +265,11 @@ export default function TakeCodingTest() {
       document.removeEventListener('click', handleGlobalClick, true);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [testData, submissionResult, handleSubmitCode]);
+  }, [testData, submissionResult, isFaculty]);
 
   // Handle File Upload
   const handleFileUpload = (e) => {
+    isSelectingFileRef.current = false;
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -548,7 +555,7 @@ export default function TakeCodingTest() {
             <div className="h-14 bg-slate-900 border-t border-slate-800 px-4 flex items-center justify-between shrink-0">
               <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition cursor-pointer text-xs text-slate-200">
                 <Upload size={14} /> Upload File
-                <input type="file" onChange={handleFileUpload} className="hidden" accept=".java,.py,.js,.cpp,.c,.sql,.txt" />
+                <input type="file" onClick={() => { isSelectingFileRef.current = true; }} onChange={handleFileUpload} className="hidden" accept=".java,.py,.js,.cpp,.c,.sql,.txt" />
               </label>
 
               <div className="flex items-center gap-3">

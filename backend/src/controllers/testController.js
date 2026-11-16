@@ -845,7 +845,7 @@ exports.submitCodingTest = async (req, res) => {
     const allCases = [...sampleCases, ...hiddenCases];
 
     // Evaluate code
-    const evalResult = await runTestCases(code, language, allCases);
+    const evalResult = await runTestCases(language, code, allCases);
 
     const score = evalResult.allPassed ? 100 : Math.round((evalResult.passedCount / (evalResult.totalCount || 1)) * 100);
     const answersPayload = {

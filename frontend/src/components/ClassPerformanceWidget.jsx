@@ -13,7 +13,8 @@ export default function ClassPerformanceWidget() {
       .finally(() => setLoading(false));
   }, []);
 
-  const { overall, subjects } = data;
+  const overall = data?.overall || {};
+  const subjects = Array.isArray(data?.subjects) ? data.subjects : [];
 
   return (
     <div className="space-y-5">

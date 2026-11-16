@@ -262,7 +262,7 @@ export default function FacultyMcqTests() {
                 </div>
                 <div className="text-right font-mono text-[11px] shrink-0">
                   <div className="text-emerald-400 font-bold">
-                    Class Avg: {submissions.length ? Math.round(submissions.reduce((acc, s) => acc + (s.score/s.total_questions)*100, 0) / submissions.length) : 0}%
+                    Class Avg: {submissions.length ? Math.round(submissions.reduce((acc, s) => acc + (s.total_questions ? (s.score/s.total_questions)*100 : 0), 0) / submissions.length) : 0}%
                   </div>
                   <div className="text-violet-300 text-[10px]">Integrity: Secured</div>
                 </div>
@@ -281,7 +281,7 @@ export default function FacultyMcqTests() {
                   </thead>
                   <tbody>
                     {submissions.map((sub) => {
-                      const pct = Math.round((sub.score / sub.total_questions) * 100);
+                      const pct = sub.total_questions ? Math.round((sub.score / sub.total_questions) * 100) : 0;
                       return (
                         <tr key={sub.submission_id} className="border-b border-slate-100 dark:border-slate-850 text-slate-700 dark:text-slate-300">
                           <td className="p-3.5 font-bold text-slate-900 dark:text-white">{sub.full_name}</td>

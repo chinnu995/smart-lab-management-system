@@ -86,6 +86,18 @@ export default function StudentAttendance() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        try {
+          const stream = videoRef.current.srcObject;
+          stream.getTracks().forEach(track => track.stop());
+          videoRef.current.srcObject = null;
+        } catch (_) {}
+      }
+    };
+  }, []);
+
   const getRemainingSeconds = (expiresAt) => {
     if (!expiresAt) return 900; // default 15 min fallback
     const target = new Date(expiresAt).getTime();

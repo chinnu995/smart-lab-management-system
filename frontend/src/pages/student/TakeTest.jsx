@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
@@ -29,6 +29,9 @@ export default function TakeTest() {
   const [warningCount, setWarningCount] = useState(0);
   const [malpracticeModal, setMalpracticeModal] = useState({ open: false, reason: '', count: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
+  const submitRef = useRef(null);
 
   const requestFullscreen = () => {
     if (document.documentElement.requestFullscreen) {
@@ -86,7 +89,7 @@ export default function TakeTest() {
   const handleSubmit = useCallback(async () => {
     if (submitting || result) return;
     setSubmitting(true);
-    const answerArray = Object.entries(answers).map(([questionId, selectedOption]) => ({
+    const answerArray = Object.entries(answersRef.current).map(([questionId, selectedOption]) => ({
       questionId: Number(questionId),
       selectedOption
     }));
@@ -102,7 +105,8 @@ export default function TakeTest() {
     } finally {
       setSubmitting(false);
     }
-  }, [answers, testId, submitting, result]);
+  }, [testId, submitting, result]);
+  submitRef.current = handleSubmit;
 
   // Proctoring & Tab Switch Listener (Bypassed for Faculty Preview)
   useEffect(() => {
@@ -129,7 +133,7 @@ export default function TakeTest() {
             if (document.exitFullscreen && document.fullscreenElement) {
               document.exitFullscreen().catch(() => {});
             }
-            handleSubmit();
+            if (submitRef.current) submitRef.current();
           }
         } else {
           setMalpracticeModal({ open: true, reason, count: newCount });
@@ -192,7 +196,7 @@ export default function TakeTest() {
       document.removeEventListener('click', handleGlobalClick, true);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [test, result, testId, handleSubmit]);
+  }, [test, result, testId, isFaculty]);
 
   const formatTime = (secs) => {
     const m = Math.floor(secs / 60);

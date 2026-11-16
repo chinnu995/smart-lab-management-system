@@ -186,7 +186,7 @@ export default function SubjectPrograms() {
                     <div className="shrink-0 flex items-center gap-2 md:self-center pl-9 md:pl-0">
                       {prog.runnable ? (
                         <button
-                          onClick={() => navigate(`/student/coding/problem/program-${prog.id || prog.program_no}`)}
+                          onClick={() => navigate(`/student/coding/problem/program-${prog.id}`)}
                           className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs shadow-sm cursor-pointer transition flex items-center gap-1.5"
                         >
                           <Play size={13} />

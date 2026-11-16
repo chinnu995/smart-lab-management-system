@@ -32,6 +32,10 @@ export default function ProblemList() {
   }, [category, difficultyFilter]);
 
   const handleProblemClick = (p) => {
+    if (p.isLocked) {
+      toast.error(`This problem is locked until Week ${p.weekNumber || 1}`);
+      return;
+    }
     navigate(`/student/coding/problem/${p.slug || p.problem_id}`);
   };
 

@@ -1,10 +1,13 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 
-export default function TestCard({ test }) {
+export default function TestCard({ test = {} }) {
   const navigate = useNavigate();
   const handleStart = () => {
-    navigate(`/student/test/${test.testId}`);
+    const id = test.test_id || test.testId;
+    if (id) {
+      navigate(`/student/test/${id}`);
+    }
   };
   return (
     <div className="bg-white/5 backdrop-blur-md rounded-xl p-4 shadow border border-slate-700">

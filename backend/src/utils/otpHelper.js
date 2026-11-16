@@ -37,7 +37,10 @@ function hashOtp(code) {
 function verifyOtpHash(candidateCode, storedHash) {
   if (!candidateCode || !storedHash) return false;
   const candidateHash = hashOtp(candidateCode);
-  return crypto.timingSafeEqual(Buffer.from(candidateHash), Buffer.from(storedHash));
+  const bufA = Buffer.from(candidateHash);
+  const bufB = Buffer.from(storedHash);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
 }
 
 module.exports = {

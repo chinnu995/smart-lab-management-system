@@ -50,10 +50,7 @@ export default function MarkAttendance() {
     return `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
   };
 
-  const unexpiredSessions = activeSessions.filter(s => {
-    if (!s.qr_expires_at) return true;
-    return new Date(s.qr_expires_at).getTime() > nowTime;
-  });
+  const unexpiredSessions = activeSessions;
 
   useEffect(() => {
     if (user?.subject) {
@@ -233,7 +230,7 @@ export default function MarkAttendance() {
 
   const activeSessionObj = unexpiredSessions.find(s => Number(s.session_id) === Number(selectedSessionId)) || unexpiredSessions[0];
 
-  const filteredStudents = liveData.students.filter(s =>
+  const filteredStudents = (liveData?.students || []).filter(s =>
     s.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     s.usn?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     s.department?.toLowerCase().includes(searchQuery.toLowerCase()) ||

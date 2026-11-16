@@ -66,15 +66,16 @@ exports.getSubjectRanks = async (req, res) => {
          s.semester,
          COUNT(ts.submission_id) AS tests_completed,
          SUM(ts.score) AS total_score,
-         SUM((SELECT COUNT(*) FROM test_questions tq WHERE tq.test_id = ts.test_id)) AS total_possible_score,
+         SUM(COALESCE(tqc.q_count, 0)) AS total_possible_score,
          ROUND(
-           (SUM(ts.score) * 100.0) / NULLIF(SUM((SELECT COUNT(*) FROM test_questions tq WHERE tq.test_id = ts.test_id)), 0),
+           (SUM(ts.score) * 100.0) / NULLIF(SUM(COALESCE(tqc.q_count, 0)), 0),
            1
          ) AS avg_percentage
        FROM test_submissions ts
        JOIN tests t ON ts.test_id = t.test_id
        JOIN students s ON ts.student_id = s.student_id
        JOIN users u ON s.user_id = u.user_id
+       LEFT JOIN (SELECT test_id, COUNT(*) AS q_count FROM test_questions GROUP BY test_id) tqc ON tqc.test_id = ts.test_id
        WHERE LOWER(t.subject) = LOWER(?)
        GROUP BY s.student_id, u.full_name, s.usn, s.department, s.semester
        ORDER BY total_score DESC, avg_percentage DESC, tests_completed DESC
@@ -95,12 +96,13 @@ exports.getSubjectRanks = async (req, res) => {
          s.student_id,
          SUM(ts.score) AS total_score,
          ROUND(
-           (SUM(ts.score) * 100.0) / NULLIF(SUM((SELECT COUNT(*) FROM test_questions tq WHERE tq.test_id = ts.test_id)), 0),
+           (SUM(ts.score) * 100.0) / NULLIF(SUM(COALESCE(tqc.q_count, 0)), 0),
            1
          ) AS avg_percentage
        FROM test_submissions ts
        JOIN tests t ON ts.test_id = t.test_id
        JOIN students s ON ts.student_id = s.student_id
+       LEFT JOIN (SELECT test_id, COUNT(*) AS q_count FROM test_questions GROUP BY test_id) tqc ON tqc.test_id = ts.test_id
        WHERE LOWER(t.subject) = LOWER(?)
        GROUP BY s.student_id
        ORDER BY total_score DESC, avg_percentage DESC`,
@@ -150,13 +152,14 @@ exports.getClassPerformance = async (req, res) => {
          COUNT(DISTINCT t.test_id) AS total_tests,
          COUNT(ts.submission_id) AS total_submissions,
          COUNT(DISTINCT ts.student_id) AS active_students,
-         ROUND(AVG((ts.score * 100.0) / NULLIF((SELECT COUNT(*) FROM test_questions tq WHERE tq.test_id = ts.test_id), 0)), 1) AS avg_percentage,
+         ROUND(AVG((ts.score * 100.0) / NULLIF(tqc.q_count, 0)), 1) AS avg_percentage,
          ROUND(
-           (COUNT(CASE WHEN (ts.score * 100.0 / NULLIF((SELECT COUNT(*) FROM test_questions tq WHERE tq.test_id = ts.test_id), 0)) >= 40 THEN 1 END) * 100.0) / NULLIF(COUNT(ts.submission_id), 0),
+           (COUNT(CASE WHEN (ts.score * 100.0 / NULLIF(tqc.q_count, 0)) >= 40 THEN 1 END) * 100.0) / NULLIF(COUNT(ts.submission_id), 0),
            1
          ) AS pass_percentage
        FROM tests t
        LEFT JOIN test_submissions ts ON ts.test_id = t.test_id
+       LEFT JOIN (SELECT test_id, COUNT(*) AS q_count FROM test_questions GROUP BY test_id) tqc ON tqc.test_id = ts.test_id
        GROUP BY t.subject
        ORDER BY avg_percentage DESC`
     );
@@ -166,8 +169,9 @@ exports.getClassPerformance = async (req, res) => {
       `SELECT 
          COUNT(ts.submission_id) AS grand_total_submissions,
          COUNT(DISTINCT ts.student_id) AS grand_total_participants,
-         ROUND(AVG((ts.score * 100.0) / NULLIF((SELECT COUNT(*) FROM test_questions tq WHERE tq.test_id = ts.test_id), 0)), 1) AS overall_avg_percentage
-       FROM test_submissions ts`
+         ROUND(AVG((ts.score * 100.0) / NULLIF(tqc.q_count, 0)), 1) AS overall_avg_percentage
+       FROM test_submissions ts
+       LEFT JOIN (SELECT test_id, COUNT(*) AS q_count FROM test_questions GROUP BY test_id) tqc ON tqc.test_id = ts.test_id`
     );
 
     // Top 3 Overall Class Toppers
@@ -181,12 +185,13 @@ exports.getClassPerformance = async (req, res) => {
          COUNT(ts.submission_id) AS total_tests_taken,
          SUM(ts.score) AS grand_total_score,
          ROUND(
-           AVG((ts.score * 100.0) / NULLIF((SELECT COUNT(*) FROM test_questions tq WHERE tq.test_id = ts.test_id), 0)),
+           AVG((ts.score * 100.0) / NULLIF(tqc.q_count, 0)),
            1
          ) AS overall_percentage
        FROM test_submissions ts
        JOIN students s ON ts.student_id = s.student_id
        JOIN users u ON s.user_id = u.user_id
+       LEFT JOIN (SELECT test_id, COUNT(*) AS q_count FROM test_questions GROUP BY test_id) tqc ON tqc.test_id = ts.test_id
        GROUP BY s.student_id, u.full_name, s.usn, s.department, s.semester
        ORDER BY grand_total_score DESC, overall_percentage DESC
        LIMIT 5`

@@ -61,8 +61,15 @@ export default function Login() {
         toast.success('Redirecting to password reset page...');
         setShowForgotModal(false);
         setForgotEmail('');
-        const url = new URL(data.resetLink);
-        nav(url.pathname + url.search);
+        try {
+          const url = new URL(data.resetLink);
+          nav(url.pathname + url.search);
+        } catch (_) {
+          const tokenMatch = data.resetLink.match(/token=([^&]+)/);
+          if (tokenMatch) {
+            nav(`/reset-password?token=${tokenMatch[1]}`);
+          }
+        }
       } else {
         toast.success(data.message || 'Password reset link sent to your email.');
         setShowForgotModal(false);

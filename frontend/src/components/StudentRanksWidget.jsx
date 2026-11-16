@@ -27,7 +27,7 @@ export default function StudentRanksWidget() {
     fetchRanks(selectedSubject);
   }, [selectedSubject]);
 
-  const subjects = data.availableSubjects.length > 0
+  const subjects = (data?.availableSubjects && data.availableSubjects.length > 0)
     ? data.availableSubjects
     : [
         'ADA', 'DBMS', 'LATEX', 'MONGODB', 'AI', 'JAVA', 'PYTHON', 'OPERATING SYSTEMS',

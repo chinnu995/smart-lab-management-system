@@ -315,6 +315,11 @@ async function verifyConnectionWithRetry({ maxAttempts = 5, initialDelayMs = 200
         ALTER TABLE students ADD COLUMN IF NOT EXISTS scheme VARCHAR(50);
         ALTER TABLE students ADD COLUMN IF NOT EXISTS cycle VARCHAR(20);
         ALTER TABLE users ADD COLUMN IF NOT EXISTS cycle VARCHAR(20);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS dept VARCHAR(80);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS semester INT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS scheme_id INT;
+        ALTER TABLE lab_programs ADD COLUMN IF NOT EXISTS source TEXT;
+        ALTER TABLE lab_programs ADD COLUMN IF NOT EXISTS runnable BOOLEAN DEFAULT TRUE;
       `);
       client.release();
       return;

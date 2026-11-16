@@ -434,9 +434,6 @@ exports.markByQR = async (req, res) => {
     if (rawToken) {
       [sessionRows] = await db.execute('SELECT * FROM lab_sessions WHERE qr_token = ?', [rawToken]);
     }
-    if (!sessionRows.length && sessionId) {
-      [sessionRows] = await db.execute('SELECT * FROM lab_sessions WHERE session_id = ?', [sessionId]);
-    }
 
     if (!sessionRows.length) {
       return res.status(400).json({ message: 'Invalid QR Code. Laboratory session not found.' });

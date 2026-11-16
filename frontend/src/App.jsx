@@ -63,7 +63,8 @@ function RoleHome() {
   if (!user) return <Navigate to="/login" replace />;
   if (user.role === 'student') return <Navigate to="/student" replace />;
   if (user.role === 'faculty') return <Navigate to="/faculty" replace />;
-  return <Navigate to="/hod" replace />;
+  if (user.role === 'hod') return <Navigate to="/hod" replace />;
+  return <Navigate to="/login" replace />;
 }
 
 export default function App() {
@@ -80,12 +81,13 @@ export default function App() {
         <Route path="subject-toppers" element={<SubjectToppers />} />
         <Route path="profile" element={<Profile />} />
         <Route path="kahoot" element={<KahootLobby />} />
-        <Route path="kahoot/host" element={<Private roles={['hod']}><KahootHost/></Private>} />
+        <Route path="kahoot/host" element={<Private roles={['faculty', 'hod']}><KahootHost/></Private>} />
         <Route path="kahoot/play" element={<KahootPlay />} />
 
         {/* Student */}
         <Route path="student" element={<Private roles={['student']}><StudentDashboard/></Private>} />
         <Route path="student/attendance" element={<Private roles={['student']}><StudentAttendance/></Private>} />
+        <Route path="student/bookings" element={<Private roles={['student']}><StudentBookings/></Private>} />
         <Route path="student/lab-manuals" element={<Private roles={['student']}><StudentLabManuals/></Private>} />
         <Route path="student/complaints" element={<Private roles={['student']}><StudentComplaints/></Private>} />
         <Route path="student/coding" element={<Private roles={['student', 'faculty', 'hod']}><PracticeSkills/></Private>} />

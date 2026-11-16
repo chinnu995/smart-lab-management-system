@@ -1,8 +1,9 @@
 require('dotenv').config();
 const axios = require('axios');
 
-// Gemini endpoint – use gemini-3.6-flash for max speed and compatibility
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent';
+// Gemini endpoint – default to gemini-1.5-flash for max speed and compatibility
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 /**
  * Calls Google Gemini to generate 10 multiple‑choice questions.
@@ -114,7 +115,7 @@ async function generateChatbotResponse(systemPrompt, userQuery) {
  */
 async function generateTestFeedback(subject, score, total, incorrectQuestions = []) {
   const percentage = Math.round((score / total) * 100);
-  const apiKey = process.env.AI_API_KEY;
+  const apiKey = process.env.AI_API_KEY || process.env.GEMINI_API_KEY;
 
   const defaultFeedback = {
     summary: percentage >= 80 

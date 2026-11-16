@@ -24,8 +24,8 @@ async function executeCode(language, code, stdinInput = '') {
 
       if (stdinInput) {
         child.stdin.write(stdinInput);
-        child.stdin.end();
       }
+      child.stdin.end();
 
       child.stdout.on('data', (d) => { stdout += d.toString(); });
       child.stderr.on('data', (d) => { stderr += d.toString(); });
@@ -59,8 +59,8 @@ async function executeCode(language, code, stdinInput = '') {
 
       if (stdinInput) {
         child.stdin.write(stdinInput);
-        child.stdin.end();
       }
+      child.stdin.end();
 
       child.stdout.on('data', (d) => { stdout += d.toString(); });
       child.stderr.on('data', (d) => { stderr += d.toString(); });
@@ -98,8 +98,8 @@ async function executeCode(language, code, stdinInput = '') {
         let stderr = '';
         if (stdinInput) {
           child.stdin.write(stdinInput);
-          child.stdin.end();
         }
+        child.stdin.end();
         child.stdout.on('data', (d) => { stdout += d.toString(); });
         child.stderr.on('data', (d) => { stderr += d.toString(); });
         child.on('close', (exitCode) => {
@@ -138,8 +138,8 @@ async function executeCode(language, code, stdinInput = '') {
         let stderr = '';
         if (stdinInput) {
           child.stdin.write(stdinInput);
-          child.stdin.end();
         }
+        child.stdin.end();
         child.stdout.on('data', (d) => { stdout += d.toString(); });
         child.stderr.on('data', (d) => { stderr += d.toString(); });
         child.on('close', (exitCode) => {
@@ -179,8 +179,8 @@ async function executeCode(language, code, stdinInput = '') {
         let stderr = '';
         if (stdinInput) {
           child.stdin.write(stdinInput);
-          child.stdin.end();
         }
+        child.stdin.end();
         child.stdout.on('data', (d) => { stdout += d.toString(); });
         child.stderr.on('data', (d) => { stderr += d.toString(); });
         child.on('close', (exitCode) => {

@@ -8,6 +8,41 @@ const DEFAULT_RESEND_FROM = 'PESITM Smart Lab <onboarding@resend.dev>';
 const RESEND_OWNER_EMAIL = 'chinmayhegde2511@gmail.com';
 const DEFAULT_SMTP_USER = Buffer.from('Y2hpbm1heWhlZ2RlMjUxMUBnbWFpbC5jb20=', 'base64').toString('utf8');
 const DEFAULT_SMTP_PASS = Buffer.from('dXJxdXV1Z2JrYm5mdGFscQ==', 'base64').toString('utf8');
+const VERCEL_MAIL_PROXY_URL = process.env.VERCEL_MAIL_PROXY_URL || 'https://smart-lab-management-system-phi.vercel.app/api/send-email';
+const MAIL_PROXY_SECRET = 'smart_lab_mail_proxy_secure_2026';
+
+/**
+ * Sends email via HTTPS Vercel mail proxy (bypasses cloud hosting SMTP port 465/587 blocks).
+ */
+async function sendViaVercelProxy({ to, subject, html, text }) {
+  if (!VERCEL_MAIL_PROXY_URL) return null;
+  const cleanText = text || html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  const res = await fetch(VERCEL_MAIL_PROXY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      to,
+      subject,
+      html,
+      text: cleanText,
+      secret: MAIL_PROXY_SECRET,
+    }),
+  });
+
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data?.success) {
+    throw new Error(data?.error || `HTTP ${res.status} from mail proxy`);
+  }
+
+  const recipients = Array.isArray(to) ? to : [to];
+  console.log(`✓ Email sent via HTTPS mail proxy to ${recipients.join(', ')} [ID: ${data.messageId}]`);
+  return {
+    success: true,
+    provider: 'vercel_mail_proxy',
+    messageId: data.messageId,
+    id: data.messageId,
+  };
+}
 
 /**
  * Returns a configured Resend client instance if RESEND_API_KEY is present and valid.
@@ -167,13 +202,21 @@ async function sendMail({ to, subject, html, text }) {
 
   // If using unverified Resend domain (@resend.dev) and recipient is external (e.g. user's friend),
   // Resend will reject with "You can only send testing emails to your own email address".
-  // Route directly via SMTP (Gmail) for guaranteed delivery.
-  if (isResendTestingDomain && hasExternalRecipients && smtpCreds) {
-    console.log(`ℹ️ External recipient (${recipients.join(', ')}) detected with Resend test domain. Routing directly via SMTP...`);
+  // 1. Dispatch via HTTPS mail proxy (runs over port 443 — bypasses Render's SMTP port 465 block!)
+  if (isResendTestingDomain && hasExternalRecipients) {
     try {
-      return await sendViaSmtp({ to, subject, html, text: cleanText, creds: smtpCreds });
-    } catch (directSmtpErr) {
-      console.warn(`⚠️ Direct SMTP route failed: ${directSmtpErr.message}. Attempting Resend SDK fallback...`);
+      console.log(`ℹ️ External recipient (${recipients.join(', ')}) detected with Resend test domain. Dispatching via HTTPS mail proxy...`);
+      return await sendViaVercelProxy({ to, subject, html, text: cleanText });
+    } catch (proxyErr) {
+      console.warn(`⚠️ HTTPS mail proxy attempt failed: ${proxyErr.message}. Trying direct SMTP fallback...`);
+    }
+
+    if (smtpCreds) {
+      try {
+        return await sendViaSmtp({ to, subject, html, text: cleanText, creds: smtpCreds });
+      } catch (directSmtpErr) {
+        console.warn(`⚠️ Direct SMTP route failed: ${directSmtpErr.message}. Attempting Resend SDK fallback...`);
+      }
     }
   }
 
@@ -203,6 +246,13 @@ async function sendMail({ to, subject, html, text }) {
     } catch (resendErr) {
       console.warn(`⚠️ Resend SDK send failed: ${resendErr.message}`);
 
+      // Try HTTPS mail proxy
+      try {
+        return await sendViaVercelProxy({ to, subject, html, text: cleanText });
+      } catch (proxyErr) {
+        console.warn(`⚠️ HTTPS mail proxy fallback failed: ${proxyErr.message}`);
+      }
+
       // Try quick SMTP fallback
       if (smtpCreds) {
         console.log(`ℹ️ Attempting quick SMTP fallback for ${recipients.join(', ')}...`);
@@ -217,7 +267,14 @@ async function sendMail({ to, subject, html, text }) {
     }
   }
 
-  // 2. SMTP Fallback (if Resend not configured)
+  // 2. HTTPS Proxy Fallback
+  try {
+    return await sendViaVercelProxy({ to, subject, html, text: cleanText });
+  } catch (proxyErr) {
+    console.warn(`⚠️ Final proxy attempt failed: ${proxyErr.message}`);
+  }
+
+  // 3. SMTP Fallback
   if (smtpCreds) {
     return await sendViaSmtp({ to, subject, html, text: cleanText, creds: smtpCreds });
   }

@@ -425,20 +425,33 @@ exports.signup = async (req, res) => {
     if (!usn) {
       return res.status(400).json({ message: 'USN is required for student registration' });
     }
+    const cleanUsn = usn.trim().toUpperCase();
     const usnRegex = /^4PM\d{2}[A-Za-z]{2}\d{3}$/i;
-    if (!usnRegex.test(usn.trim())) {
+    if (!usnRegex.test(cleanUsn)) {
       return res.status(400).json({ message: 'Invalid USN format. USN must follow college code 4PM format (e.g. 4PM22CS001)' });
     }
 
     const [usnRows] = await db.execute(
-      'SELECT s.user_id, u.is_active FROM students s JOIN users u ON s.user_id = u.user_id WHERE s.usn=?',
-      [usn.trim().toUpperCase()]
+      'SELECT s.user_id, u.is_active, u.email FROM students s JOIN users u ON s.user_id = u.user_id WHERE UPPER(s.usn)=?',
+      [cleanUsn]
     );
     if (usnRows.length) {
       const activeUsn = usnRows.find(r => r.is_active);
       if (activeUsn) {
-        return res.status(409).json({ message: 'USN is already registered to an active account.' });
+        return res.status(409).json({
+          message: `USN ${cleanUsn} is already registered. If this is your account, please sign in. If someone else used your USN, contact your Lab Administrator.`
+        });
       }
+
+      // Check if the pending registration is under a DIFFERENT email:
+      const diffEmailUser = usnRows.find(r => r.email && r.email.toLowerCase() !== cleanEmail.toLowerCase());
+      if (diffEmailUser) {
+        return res.status(409).json({
+          message: `USN ${cleanUsn} is already registered under another email. You cannot use another student's USN.`
+        });
+      }
+
+      // Only if it is the same user re-submitting before activation:
       for (const r of usnRows) {
         await db.execute('DELETE FROM students WHERE user_id=?', [r.user_id]).catch(() => {});
         await db.execute('DELETE FROM users WHERE user_id=?', [r.user_id]).catch(() => {});
@@ -454,15 +467,22 @@ exports.signup = async (req, res) => {
       return res.status(400).json({ message: 'Assigned subject is required for faculty registration' });
     }
 
+    const cleanEmp = emp_code.trim().toUpperCase();
     const [empRows] = await db.execute(
-      'SELECT f.user_id, u.is_active FROM faculty f JOIN users u ON f.user_id = u.user_id WHERE f.emp_code=?',
-      [emp_code.trim()]
+      'SELECT f.user_id, u.is_active, u.email FROM faculty f JOIN users u ON f.user_id = u.user_id WHERE UPPER(f.emp_code)=?',
+      [cleanEmp]
     );
     if (empRows.length) {
       const activeEmp = empRows.find(r => r.is_active);
       if (activeEmp) {
-        return res.status(409).json({ message: 'Employee code is already registered to an active account.' });
+        return res.status(409).json({ message: `Employee code ${cleanEmp} is already registered to an active account.` });
       }
+
+      const diffEmailFaculty = empRows.find(r => r.email && r.email.toLowerCase() !== cleanEmail.toLowerCase());
+      if (diffEmailFaculty) {
+        return res.status(409).json({ message: `Employee code ${cleanEmp} is already registered under another email.` });
+      }
+
       for (const r of empRows) {
         await db.execute('DELETE FROM faculty WHERE user_id=?', [r.user_id]).catch(() => {});
         await db.execute('DELETE FROM users WHERE user_id=?', [r.user_id]).catch(() => {});

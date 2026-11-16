@@ -581,8 +581,11 @@ exports.signup = async (req, res) => {
         emailWarning = emailResult.warning;
       }
     } catch (mailErr) {
-      console.warn(`⚠️ [SIGNUP EMAIL NOTICE] Could not send code directly to ${cleanEmail}:`, mailErr.message);
+      console.error(`❌ [SIGNUP EMAIL NOTICE] Could not send code directly to ${cleanEmail}:`, mailErr.message);
       emailWarning = mailErr.message;
+      return res.status(500).json({
+        message: `Could not send verification email to ${cleanEmail}: ${mailErr.message}. Please verify the email address or contact administrator.`
+      });
     }
 
     res.status(201).json({
@@ -797,8 +800,11 @@ exports.resendCode = async (req, res) => {
       emailWarning = emailResult.warning;
     }
   } catch (err) {
-    console.warn(`⚠️ [RESEND CODE NOTICE] Could not send code directly to ${cleanEmail}:`, err.message);
+    console.error(`❌ [RESEND CODE NOTICE] Could not send code directly to ${cleanEmail}:`, err.message);
     emailWarning = err.message;
+    return res.status(500).json({
+      message: `Could not send verification code to ${cleanEmail}: ${err.message}.`
+    });
   }
 
   audit.log(users[0]?.user_id || 0, 'RESEND_OTP', 'users', users[0]?.user_id || 0, `Resent OTP code (${resendCount}/3) to ${cleanEmail}`, req.ip);

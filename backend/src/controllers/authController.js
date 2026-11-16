@@ -586,13 +586,9 @@ exports.signup = async (req, res) => {
     }
 
     res.status(201).json({
-      message: (emailResult && !emailResult.sandbox)
-        ? 'Verification code sent to your email. Please check your inbox or spam folder.'
-        : 'Verification code generated! (Sandbox mode: check owner inbox or use code below)',
+      message: 'Verification code sent to your email. Please check your inbox or spam folder.',
       email: cleanEmail,
-      provider: emailResult?.provider || 'sandbox',
-      otp: otp, // Pass OTP back to prevent users getting stuck in sandbox test mode
-      sandboxNotice: emailWarning,
+      provider: emailResult?.provider || 'resend',
     });
   } catch (e) {
     if (e.code === '23505' || e.code === 'ER_DUP_ENTRY') {
@@ -809,13 +805,9 @@ exports.resendCode = async (req, res) => {
 
   const remaining = Math.max(0, 3 - resendCount);
   res.json({
-    message: (emailResult && !emailResult.sandbox)
-      ? `New verification code sent to your email. (${remaining} resend attempt${remaining === 1 ? '' : 's'} left)`
-      : `New verification code generated! (${remaining} resend attempt${remaining === 1 ? '' : 's'} left)`,
+    message: `New verification code sent to your email. (${remaining} resend attempt${remaining === 1 ? '' : 's'} left)`,
     resendCount,
     remainingResends: remaining,
-    provider: emailResult?.provider || 'sandbox',
-    otp: otp,
-    sandboxNotice: emailWarning,
+    provider: emailResult?.provider || 'resend',
   });
 };

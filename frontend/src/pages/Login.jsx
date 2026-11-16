@@ -18,7 +18,6 @@ export default function Login() {
   // OTP Verification state
   const [otp, setOtp] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');
-  const [devOtp, setDevOtp] = useState('');
 
   // Resend OTP state
   const [resendTimer, setResendTimer] = useState(0);
